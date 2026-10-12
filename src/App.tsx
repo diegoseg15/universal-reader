@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
@@ -30,6 +29,10 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 0.25;
+
 type PendingPDF = {
   cancelled: boolean;
   file: FileHandle | null;
@@ -40,14 +43,10 @@ type PendingPDF = {
 };
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
-function destroyPendingTask(
-  pending: PendingPDF,
-): Promise<void> {
+function destroyPendingTask(pending: PendingPDF): Promise<void> {
   if (!pending.task) {
     return Promise.resolve();
   }
@@ -59,10 +58,10 @@ function destroyPendingTask(
 }
 
 function App() {
-  const [document, setDocument] =
-    useState<PDFDocumentProxy | null>(null);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
 
   const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,9 +82,7 @@ function App() {
         pending.transport?.abort();
 
         if (pending.task) {
-          void destroyPendingTask(pending).catch(
-            console.error,
-          );
+          void destroyPendingTask(pending).catch(console.error);
         }
       }
 
@@ -153,54 +150,34 @@ function App() {
 
       const size = await file.seek(0, SeekMode.End);
 
-      if (
-        !Number.isSafeInteger(size) ||
-        size < 5
-      ) {
+      if (!Number.isSafeInteger(size) || size < 5) {
         throw new Error("Tamaño de PDF inválido.");
       }
 
-      const signature = await readRange(
-        file,
-        0,
-        5,
-      );
+      const signature = await readRange(file, 0, 5);
 
       if (pending.cancelled) return;
 
-      const validPDF = [
-        0x25,
-        0x50,
-        0x44,
-        0x46,
-        0x2d,
-      ].every(
+      const validPDF = [0x25, 0x50, 0x44, 0x46, 0x2d].every(
         (value, index) => signature[index] === value,
       );
 
       if (!validPDF) {
-        throw new Error(
-          "El archivo no tiene una cabecera PDF válida.",
-        );
+        throw new Error("El archivo no tiene una cabecera PDF válida.");
       }
 
       const transport = new LocalPDFTransport(
         size,
         (begin, end) => {
           if (end > size) {
-            throw new Error(
-              "Rango fuera del documento.",
-            );
+            throw new Error("Rango fuera del documento.");
           }
 
           return readRange(file, begin, end);
         },
         (cause) => {
           // Ignore failures from a cancelled/closed PDF.
-          if (
-            pending.cancelled ||
-            !mountedRef.current
-          ) {
+          if (pending.cancelled || !mountedRef.current) {
             return;
           }
 
@@ -208,30 +185,21 @@ function App() {
 
           // The transport must still belong to the
           // pending task or the currently active PDF.
-          if (
-            !pending.task &&
-            active?.transport !== transport
-          ) {
+          if (!pending.task && active?.transport !== transport) {
             return;
           }
 
           pending.failure = cause;
 
-          setError(
-            `Error de lectura parcial: ${getErrorMessage(cause)}`,
-          );
+          setError(`Error de lectura parcial: ${getErrorMessage(cause)}`);
 
           if (active?.transport === transport) {
             activeRef.current = null;
             setDocument(null);
 
-            void closePDF(active).catch(
-              console.error,
-            );
+            void closePDF(active).catch(console.error);
           } else {
-            void destroyPendingTask(pending).catch(
-              console.error,
-            );
+            void destroyPendingTask(pending).catch(console.error);
           }
         },
       );
@@ -245,10 +213,7 @@ function App() {
         rangeChunkSize: 64 * 1024,
         wasmUrl: new URL(
           "pdfjs-wasm/",
-          new URL(
-            import.meta.env.BASE_URL,
-            window.location.origin,
-          ),
+          new URL(import.meta.env.BASE_URL, window.location.origin),
         ).href,
       });
 
@@ -276,12 +241,10 @@ function App() {
       pending.transport = null;
 
       setPageNumber(1);
+      setZoom(null);
       setDocument(loadedDocument);
     } catch (cause) {
-      if (
-        !pending.cancelled &&
-        mountedRef.current
-      ) {
+      if (!pending.cancelled && mountedRef.current) {
         setError(
           `No se pudo abrir el PDF: ${getErrorMessage(
             pending.failure ?? cause,
@@ -297,10 +260,7 @@ function App() {
         try {
           await destroyPendingTask(pending);
         } catch (cause) {
-          console.error(
-            "Error al destruir PDF pendiente:",
-            cause,
-          );
+          console.error("Error al destruir PDF pendiente:", cause);
         }
       }
 
@@ -308,10 +268,7 @@ function App() {
         try {
           await pending.transport.waitForIdle();
         } catch (cause) {
-          console.error(
-            "Error al esperar lecturas PDF:",
-            cause,
-          );
+          console.error("Error al esperar lecturas PDF:", cause);
         }
       }
 
@@ -319,10 +276,7 @@ function App() {
         try {
           await pending.file.close();
         } catch (cause) {
-          console.error(
-            "Error al cerrar archivo PDF:",
-            cause,
-          );
+          console.error("Error al cerrar archivo PDF:", cause);
         }
       }
 
@@ -341,31 +295,33 @@ function App() {
       title="Universal Reader"
       loading={loading}
       error={error}
-      documentKey={
-        document?.fingerprints[0] ?? null
-      }
+      documentKey={document?.fingerprints[0] ?? null}
       pageNumber={document ? pageNumber : null}
       pageCount={document?.numPages ?? null}
       onSelectFile={() => void selectPDF()}
-      onPrevious={() =>
-        setPageNumber((current) =>
-          Math.max(1, current - 1),
-        )
-      }
+      onPrevious={() => setPageNumber((current) => Math.max(1, current - 1))}
       onNext={() =>
         setPageNumber((current) =>
-          Math.min(
-            document?.numPages ?? current,
-            current + 1,
-          ),
+          Math.min(document?.numPages ?? current, current + 1),
         )
       }
+      zoom={{
+        value: zoom,
+        min: MIN_ZOOM,
+        max: MAX_ZOOM,
+        onIncrease: () =>
+          setZoom((current) => Math.min(MAX_ZOOM, (current ?? 1) + ZOOM_STEP)),
+        onDecrease: () =>
+          setZoom((current) => Math.max(MIN_ZOOM, (current ?? 1) - ZOOM_STEP)),
+        onFit: () => setZoom(null),
+      }}
     >
       {document && (
         <PdfCanvasPage
           key={`${document.fingerprints[0]}-${pageNumber}`}
           document={document}
           pageNumber={pageNumber}
+          zoom={zoom}
           onError={setError}
         />
       )}
