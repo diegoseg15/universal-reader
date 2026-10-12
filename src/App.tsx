@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
@@ -30,14 +29,11 @@ import {
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function App() {
-  const [document, setDocument] =
-    useState<PDFDocumentProxy | null>(null);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
 
   const [pageNumber, setPageNumber] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -94,56 +90,35 @@ function App() {
 
       pendingFile = file;
 
-      const size = await file.seek(
-        0,
-        SeekMode.End,
-      );
+      const size = await file.seek(0, SeekMode.End);
 
       if (!Number.isSafeInteger(size) || size < 5) {
         throw new Error("Tamaño de PDF inválido.");
       }
 
-      const signature = await readRange(
-        file,
-        0,
-        5,
-      );
+      const signature = await readRange(file, 0, 5);
 
-      const validPDF = [
-        0x25,
-        0x50,
-        0x44,
-        0x46,
-        0x2d,
-      ].every(
+      const validPDF = [0x25, 0x50, 0x44, 0x46, 0x2d].every(
         (value, index) => signature[index] === value,
       );
 
       if (!validPDF) {
-        throw new Error(
-          "El archivo no tiene una cabecera PDF válida.",
-        );
+        throw new Error("El archivo no tiene una cabecera PDF válida.");
       }
 
       const transport = new LocalPDFTransport(
         size,
         (begin, end) => {
           if (end > size) {
-            throw new Error(
-              "Rango fuera del documento.",
-            );
+            throw new Error("Rango fuera del documento.");
           }
 
           return readRange(file, begin, end);
         },
         (cause) => {
-          setError(
-            `Error de lectura parcial: ${getErrorMessage(cause)}`,
-          );
+          setError(`Error de lectura parcial: ${getErrorMessage(cause)}`);
 
-          void taskForError
-            ?.destroy()
-            .catch(console.error);
+          void taskForError?.destroy().catch(console.error);
         },
       );
 
@@ -152,12 +127,15 @@ function App() {
         disableStream: true,
         disableAutoFetch: true,
         rangeChunkSize: 64 * 1024,
+        wasmUrl: new URL(
+          "pdfjs-wasm/",
+          new URL(import.meta.env.BASE_URL, window.location.origin),
+        ).href,
       });
 
       taskForError = pendingTask;
 
-      const loadedDocument =
-        await pendingTask.promise;
+      const loadedDocument = await pendingTask.promise;
 
       activeRef.current = {
         file,
@@ -193,17 +171,10 @@ function App() {
       pageNumber={document ? pageNumber : null}
       pageCount={document?.numPages ?? null}
       onSelectFile={() => void selectPDF()}
-      onPrevious={() =>
-        setPageNumber((current) =>
-          Math.max(1, current - 1),
-        )
-      }
+      onPrevious={() => setPageNumber((current) => Math.max(1, current - 1))}
       onNext={() =>
         setPageNumber((current) =>
-          Math.min(
-            document?.numPages ?? current,
-            current + 1,
-          ),
+          Math.min(document?.numPages ?? current, current + 1),
         )
       }
     >
