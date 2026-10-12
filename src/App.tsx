@@ -428,8 +428,9 @@ function App() {
           document={document}
           pageNumber={pageNumber}
           zoom={zoom}
-          onCanvasLayout={restoreZoomPosition}
+          highlightQuery={pdfSearch.status === "done" ? pdfSearch.query : null}
           onError={setError}
+          onCanvasLayout={restoreZoomPosition}
         />
       )}
     </ReaderShell>

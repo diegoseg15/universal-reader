@@ -1,4 +1,3 @@
-
 /*
  * Text-layer styles adapted for PDF.js 6.4.299.
  * Original project: Mozilla PDF.js
@@ -44,9 +43,7 @@
   --min-font-size: 1;
   --min-font-size-inv: calc(1 / var(--min-font-size));
 
-  --text-scale-factor: calc(
-    var(--total-scale-factor) * var(--min-font-size)
-  );
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
 }
 
 .pdf-text-layer :is(span, br) {
@@ -69,13 +66,9 @@
   --scale-x: 1;
   --rotate: 0deg;
 
-  font-size: calc(
-    var(--text-scale-factor) * var(--font-height)
-  );
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
 
-  transform:
-    rotate(var(--rotate))
-    scaleX(var(--scale-x))
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
     scale(var(--min-font-size-inv));
 }
 
@@ -110,4 +103,11 @@
 
 .pdf-text-layer.selecting .endOfContent {
   top: 0;
+}
+
+/* Search highlights rendered without modifying TextLayer DOM */
+
+::highlight(universal-reader-pdf-search) {
+  background-color: rgba(255, 190, 55, 0.6);
+  color: transparent;
 }
