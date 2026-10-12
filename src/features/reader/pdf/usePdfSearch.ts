@@ -6,6 +6,35 @@ type SearchPage = {
   matchCount: number;
 };
 
+type SearchMatch = {
+  pageNumber: number;
+  indexOnPage: number;
+};
+
+function findMatch(
+  pages: SearchPage[],
+  globalIndex: number,
+): SearchMatch | null {
+  if (!Number.isInteger(globalIndex) || globalIndex < 0) {
+    return null;
+  }
+
+  let remaining = globalIndex;
+
+  for (const page of pages) {
+    if (remaining < page.matchCount) {
+      return {
+        pageNumber: page.pageNumber,
+        indexOnPage: remaining,
+      };
+    }
+
+    remaining -= page.matchCount;
+  }
+
+  return null;
+}
+
 type SearchStatus = "idle" | "searching" | "done" | "error";
 
 function normalizeText(value: string): string {
@@ -160,28 +189,38 @@ export function usePdfSearch(
     });
   }
 
-  function goToResult(index: number): void {
-    if (status !== "done" || pages.length === 0) {
-      return;
-    }
-
-    const wrappedIndex = ((index % pages.length) + pages.length) % pages.length;
-
-    setSelectedIndex(wrappedIndex);
-
-    onNavigateToPage(pages[wrappedIndex].pageNumber);
-  }
-
   const totalMatches = pages.reduce(
     (total, page) => total + page.matchCount,
     0,
   );
+
+  const activeMatch =
+    status === "done" ? findMatch(pages, selectedIndex) : null;
+
+  function goToResult(index: number): void {
+    if (status !== "done" || totalMatches === 0) {
+      return;
+    }
+
+    const wrappedIndex = ((index % totalMatches) + totalMatches) % totalMatches;
+
+    const match = findMatch(pages, wrappedIndex);
+
+    if (!match) {
+      return;
+    }
+
+    setSelectedIndex(wrappedIndex);
+
+    onNavigateToPage(match.pageNumber);
+  }
 
   return {
     query,
     status,
     pages,
     selectedIndex,
+    activeMatch,
     scannedPages,
     error,
     totalMatches,

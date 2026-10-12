@@ -223,8 +223,8 @@ export function ReaderShell({
             {search.status === "done" && search.pagesWithMatches > 0 && (
               <div className="reader-search__navigation">
                 <span className="reader-search__counter">
-                  Página con resultados {search.selectedIndex + 1} de{" "}
-                  {search.pagesWithMatches}
+                  Coincidencia {search.selectedIndex + 1} de{" "}
+                  {search.totalMatches}
                 </span>
 
                 <button
@@ -232,7 +232,7 @@ export function ReaderShell({
                   className="reader-button reader-button--icon"
                   aria-label="Página anterior con resultados"
                   onClick={search.onPrevious}
-                  disabled={search.pagesWithMatches <= 1}
+                  disabled={search.totalMatches <= 1}
                 >
                   ‹
                 </button>
@@ -242,7 +242,7 @@ export function ReaderShell({
                   className="reader-button reader-button--icon"
                   aria-label="Página siguiente con resultados"
                   onClick={search.onNext}
-                  disabled={search.pagesWithMatches <= 1}
+                  disabled={search.totalMatches <= 1}
                 >
                   ›
                 </button>
