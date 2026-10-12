@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -33,6 +33,11 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.25;
 
+type ZoomAnchor = {
+  x: number;
+  y: number;
+};
+
 type PendingPDF = {
   cancelled: boolean;
   file: FileHandle | null;
@@ -65,6 +70,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const viewportRef = useRef<HTMLElement | null>(null);
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+
   const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
   const openingRef = useRef<PendingPDF | null>(null);
@@ -93,6 +101,70 @@ function App() {
         void closePDF(active).catch(console.error);
       }
     };
+  }, []);
+
+  function changeZoom(nextZoom: number | null): void {
+    if (nextZoom === zoom) return;
+
+    const viewport = viewportRef.current;
+    const canvas = viewport?.querySelector("canvas");
+
+    zoomAnchorRef.current = null;
+
+    if (viewport && canvas) {
+      const viewportRect = viewport.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+
+      if (canvasRect.width > 0 && canvasRect.height > 0) {
+        const centerX = viewportRect.left + viewportRect.width / 2;
+
+        const centerY = viewportRect.top + viewportRect.height / 2;
+
+        zoomAnchorRef.current = {
+          x: Math.max(
+            0,
+            Math.min(1, (centerX - canvasRect.left) / canvasRect.width),
+          ),
+          y: Math.max(
+            0,
+            Math.min(1, (centerY - canvasRect.top) / canvasRect.height),
+          ),
+        };
+      }
+    }
+
+    setZoom(nextZoom);
+  }
+
+  const restoreZoomPosition = useCallback((): void => {
+    const anchor = zoomAnchorRef.current;
+
+    if (!anchor) return;
+
+    zoomAnchorRef.current = null;
+
+    const viewport = viewportRef.current;
+    const canvas = viewport?.querySelector("canvas");
+
+    if (!viewport || !canvas) return;
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+
+    if (canvasRect.width <= 0 || canvasRect.height <= 0) {
+      return;
+    }
+
+    const centerX = viewportRect.left + viewportRect.width / 2;
+
+    const centerY = viewportRect.top + viewportRect.height / 2;
+
+    const targetX = canvasRect.left + anchor.x * canvasRect.width;
+
+    const targetY = canvasRect.top + anchor.y * canvasRect.height;
+
+    viewport.scrollLeft += targetX - centerX;
+    viewport.scrollTop += targetY - centerY;
   }, []);
 
   async function selectPDF(): Promise<void> {
@@ -129,6 +201,9 @@ function App() {
 
       setLoading(true);
       setError(null);
+
+      zoomAnchorRef.current = null;
+
       setDocument(null);
 
       const previous = activeRef.current;
@@ -299,21 +374,28 @@ function App() {
       pageNumber={document ? pageNumber : null}
       pageCount={document?.numPages ?? null}
       onSelectFile={() => void selectPDF()}
-      onPrevious={() => setPageNumber((current) => Math.max(1, current - 1))}
-      onNext={() =>
+      viewportRef={viewportRef}
+      onPrevious={() => {
+        zoomAnchorRef.current = null;
+
+        setPageNumber((current) => Math.max(1, current - 1));
+      }}
+      onNext={() => {
+        zoomAnchorRef.current = null;
+
         setPageNumber((current) =>
           Math.min(document?.numPages ?? current, current + 1),
-        )
-      }
+        );
+      }}
       zoom={{
         value: zoom,
         min: MIN_ZOOM,
         max: MAX_ZOOM,
         onIncrease: () =>
-          setZoom((current) => Math.min(MAX_ZOOM, (current ?? 1) + ZOOM_STEP)),
+          changeZoom(Math.min(MAX_ZOOM, (zoom ?? 1) + ZOOM_STEP)),
         onDecrease: () =>
-          setZoom((current) => Math.max(MIN_ZOOM, (current ?? 1) - ZOOM_STEP)),
-        onFit: () => setZoom(null),
+          changeZoom(Math.max(MIN_ZOOM, (zoom ?? 1) - ZOOM_STEP)),
+        onFit: () => changeZoom(null),
       }}
     >
       {document && (
@@ -322,6 +404,7 @@ function App() {
           document={document}
           pageNumber={pageNumber}
           zoom={zoom}
+          onCanvasLayout={restoreZoomPosition}
           onError={setError}
         />
       )}

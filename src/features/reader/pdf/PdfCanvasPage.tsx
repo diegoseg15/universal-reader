@@ -7,6 +7,7 @@ type PdfCanvasPageProps = {
   pageNumber: number;
   zoom: number | null;
   onError: (message: string) => void;
+  onCanvasLayout?: () => void;
 };
 
 type CanvasRendererProps = PdfCanvasPageProps & {
@@ -27,6 +28,7 @@ function CanvasRenderer({
   zoom,
   availableWidth,
   onError,
+  onCanvasLayout,
 }: CanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -87,6 +89,7 @@ function CanvasRenderer({
 
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
+      onCanvasLayout?.();
 
       const context = canvas.getContext("2d");
 
@@ -118,7 +121,7 @@ function CanvasRenderer({
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [document, pageNumber, availableWidth, zoom, onError]);
+  }, [document, pageNumber, availableWidth, zoom, onError, onCanvasLayout]);
 
   return (
     <canvas
@@ -139,6 +142,7 @@ export function PdfCanvasPage({
   pageNumber,
   zoom,
   onError,
+  onCanvasLayout,
 }: PdfCanvasPageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
@@ -188,6 +192,7 @@ export function PdfCanvasPage({
           zoom={zoom}
           availableWidth={availableWidth}
           onError={onError}
+          onCanvasLayout={onCanvasLayout}
         />
       )}
     </div>

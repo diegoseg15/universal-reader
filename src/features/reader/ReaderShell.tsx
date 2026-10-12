@@ -1,5 +1,4 @@
-
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import "./ReaderShell.css";
 
 type ReaderZoomControls = {
@@ -22,6 +21,8 @@ type ReaderShellProps = {
 
   zoom?: ReaderZoomControls;
 
+  viewportRef?: Ref<HTMLElement>;
+
   onSelectFile: () => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -37,24 +38,20 @@ export function ReaderShell({
   pageNumber,
   pageCount,
   zoom,
+  viewportRef,
   onSelectFile,
   onPrevious,
   onNext,
   children,
 }: ReaderShellProps) {
-  const hasDocument =
-    pageNumber !== null && pageCount !== null;
+  const hasDocument = pageNumber !== null && pageCount !== null;
 
   return (
     <main className="reader-shell">
       <header className="reader-header">
         <div className="reader-brand">
-          <span className="reader-brand__name">
-            {title}
-          </span>
-          <span className="reader-brand__subtitle">
-            Lector digital
-          </span>
+          <span className="reader-brand__name">{title}</span>
+          <span className="reader-brand__subtitle">Lector digital</span>
         </div>
 
         <button
@@ -69,10 +66,7 @@ export function ReaderShell({
 
       {hasDocument && (
         <div className="reader-toolbar">
-          <nav
-            className="reader-navigation"
-            aria-label="Navegación de lectura"
-          >
+          <nav className="reader-navigation" aria-label="Navegación de lectura">
             <button
               type="button"
               className="reader-button"
@@ -82,10 +76,7 @@ export function ReaderShell({
               Anterior
             </button>
 
-            <span
-              className="reader-navigation__progress"
-              aria-live="polite"
-            >
+            <span className="reader-navigation__progress" aria-live="polite">
               {pageNumber} / {pageCount}
             </span>
 
@@ -111,18 +102,13 @@ export function ReaderShell({
                 aria-label="Reducir zoom"
                 onClick={zoom.onDecrease}
                 disabled={
-                  loading ||
-                  (zoom.value !== null &&
-                    zoom.value <= zoom.min)
+                  loading || (zoom.value !== null && zoom.value <= zoom.min)
                 }
               >
                 −
               </button>
 
-              <output
-                className="reader-zoom__value"
-                aria-live="polite"
-              >
+              <output className="reader-zoom__value" aria-live="polite">
                 {zoom.value === null
                   ? "Ajustado"
                   : `${Math.round(zoom.value * 100)}%`}
@@ -134,9 +120,7 @@ export function ReaderShell({
                 aria-label="Ampliar zoom"
                 onClick={zoom.onIncrease}
                 disabled={
-                  loading ||
-                  (zoom.value !== null &&
-                    zoom.value >= zoom.max)
+                  loading || (zoom.value !== null && zoom.value >= zoom.max)
                 }
               >
                 +
@@ -163,14 +147,13 @@ export function ReaderShell({
       )}
 
       <section
+        ref={viewportRef}
         key={`${documentKey ?? "empty"}-${pageNumber ?? 0}`}
         className="reader-viewport"
         aria-label="Contenido del documento"
       >
         {loading ? (
-          <p className="reader-message">
-            Preparando documento...
-          </p>
+          <p className="reader-message">Preparando documento...</p>
         ) : children ? (
           children
         ) : (
