@@ -1,0 +1,113 @@
+
+/*
+ * Text-layer styles adapted for PDF.js 6.4.299.
+ * Original project: Mozilla PDF.js
+ * License: Apache-2.0
+ * Source: web/text_layer_builder.css
+ */
+
+.pdf-page-frame {
+  position: relative;
+  margin-inline: auto;
+  background: #ffffff;
+  isolation: isolate;
+}
+
+.pdf-page-canvas {
+  display: block;
+  background: #ffffff;
+}
+
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+
+  overflow: clip;
+  z-index: 1;
+
+  color-scheme: only light;
+  text-align: initial;
+
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+
+  text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+
+  caret-color: CanvasText;
+
+  --min-font-size: 1;
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  --text-scale-factor: calc(
+    var(--total-scale-factor) * var(--min-font-size)
+  );
+}
+
+.pdf-text-layer :is(span, br) {
+  position: absolute;
+
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+
+  transform-origin: 0 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+
+  font-size: calc(
+    var(--text-scale-factor) * var(--font-height)
+  );
+
+  transform:
+    rotate(var(--rotate))
+    scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+
+.pdf-text-layer ::selection {
+  background: rgb(44 91 180 / 0.35);
+  color: transparent;
+}
+
+.pdf-text-layer br::selection {
+  background: transparent;
+}
+
+.pdf-text-layer .endOfContent {
+  position: absolute;
+  display: block;
+
+  inset: 100% 0 0;
+  z-index: 0;
+
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-text-layer.selecting .endOfContent {
+  top: 0;
+}
