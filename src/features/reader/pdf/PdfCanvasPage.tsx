@@ -13,6 +13,8 @@ type PdfCanvasPageProps = {
   pageNumber: number;
   zoom: number | null;
   highlightQuery?: string | null;
+  activeMatchIndex?: number | null;
+  onActiveMatchReady?: (range: Range) => void;
   onError: (message: string) => void;
   onCanvasLayout?: () => void;
 };
@@ -26,6 +28,7 @@ const MAX_CANVAS_PIXELS = 12_000_000;
 const MAX_PIXEL_RATIO = 2;
 
 const SEARCH_HIGHLIGHT_NAME = "universal-reader-pdf-search";
+const ACTIVE_HIGHLIGHT_NAME = "universal-reader-pdf-search-active";
 const MAX_VISIBLE_HIGHLIGHTS = 500;
 
 type TextPoint = {
@@ -36,12 +39,15 @@ type TextPoint = {
 function clearSearchHighlights(): void {
   if ("highlights" in CSS) {
     CSS.highlights.delete(SEARCH_HIGHLIGHT_NAME);
+    CSS.highlights.delete(ACTIVE_HIGHLIGHT_NAME);
   }
 }
 
 function highlightPageText(
   container: HTMLElement,
   rawQuery: string | null | undefined,
+  activeMatchIndex: number | null = null,
+  onActiveMatchReady?: (range: Range) => void,
 ): void {
   clearSearchHighlights();
 
@@ -142,7 +148,9 @@ function highlightPageText(
   const content = characters.join("");
   const ranges: Range[] = [];
 
+  let activeRange: Range | null = null;
   let offset = 0;
+  let matchIndex = 0;
 
   while (offset < content.length) {
     const index = content.indexOf(query, offset);
@@ -154,23 +162,42 @@ function highlightPageText(
 
     if (!start || !end) break;
 
-    const range = document.createRange();
+    const isActive = matchIndex === activeMatchIndex;
 
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
+    const canAddGeneralHighlight = ranges.length < MAX_VISIBLE_HIGHLIGHTS;
 
-    ranges.push(range);
+    if (canAddGeneralHighlight || isActive) {
+      const range = document.createRange();
 
-    offset = index + query.length;
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
 
-    // Limit highlights on unusually dense pages.
-    if (ranges.length >= MAX_VISIBLE_HIGHLIGHTS) {
-      break;
+      if (canAddGeneralHighlight) {
+        ranges.push(range);
+      }
+
+      if (isActive) {
+        activeRange = range;
+      }
     }
+
+    matchIndex++;
+    offset = index + query.length;
   }
 
   if (ranges.length > 0) {
     CSS.highlights.set(SEARCH_HIGHLIGHT_NAME, new Highlight(...ranges));
+  }
+
+  if (activeRange) {
+    const activeHighlight = new Highlight(activeRange);
+
+    // The selected match wins when highlights overlap.
+    activeHighlight.priority = 1;
+
+    CSS.highlights.set(ACTIVE_HIGHLIGHT_NAME, activeHighlight);
+
+    onActiveMatchReady?.(activeRange);
   }
 }
 
@@ -183,6 +210,8 @@ function CanvasRenderer({
   pageNumber,
   zoom,
   highlightQuery,
+  activeMatchIndex,
+  onActiveMatchReady,
   availableWidth,
   onError,
   onCanvasLayout,
@@ -193,6 +222,9 @@ function CanvasRenderer({
 
   const highlightedContainerRef = useRef<HTMLDivElement | null>(null);
   const currentQueryRef = useRef(highlightQuery);
+
+  const currentActiveMatchIndexRef = useRef(activeMatchIndex);
+  const currentActiveMatchReadyRef = useRef(onActiveMatchReady);
 
   useEffect(() => {
     let cancelled = false;
@@ -306,7 +338,12 @@ function CanvasRenderer({
 
       highlightedContainerRef.current = textContainer;
 
-      highlightPageText(textContainer, currentQueryRef.current);
+      highlightPageText(
+        textContainer,
+        currentQueryRef.current,
+        currentActiveMatchIndexRef.current,
+        currentActiveMatchReadyRef.current,
+      );
     }
 
     void renderPage().catch((error: unknown) => {
@@ -335,11 +372,18 @@ function CanvasRenderer({
 
   useEffect(() => {
     currentQueryRef.current = highlightQuery;
+    currentActiveMatchIndexRef.current = activeMatchIndex;
+    currentActiveMatchReadyRef.current = onActiveMatchReady;
 
     const container = highlightedContainerRef.current;
 
     if (container) {
-      highlightPageText(container, highlightQuery);
+      highlightPageText(
+        container,
+        highlightQuery,
+        activeMatchIndex,
+        onActiveMatchReady,
+      );
     } else {
       clearSearchHighlights();
     }
@@ -347,7 +391,7 @@ function CanvasRenderer({
     return () => {
       clearSearchHighlights();
     };
-  }, [highlightQuery]);
+  }, [highlightQuery, activeMatchIndex, onActiveMatchReady]);
 
   return (
     <div ref={frameRef} className="pdf-page-frame">
@@ -368,6 +412,8 @@ export function PdfCanvasPage({
   pageNumber,
   zoom,
   highlightQuery,
+  activeMatchIndex,
+  onActiveMatchReady,
   onError,
   onCanvasLayout,
 }: PdfCanvasPageProps) {
@@ -426,6 +472,8 @@ export function PdfCanvasPage({
           highlightQuery={highlightQuery}
           availableWidth={availableWidth}
           onError={onError}
+          activeMatchIndex={activeMatchIndex}
+          onActiveMatchReady={onActiveMatchReady}
           onCanvasLayout={onCanvasLayout}
         />
       )}

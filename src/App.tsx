@@ -74,11 +74,70 @@ function App() {
 
   const viewportRef = useRef<HTMLElement | null>(null);
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const lastCenteredMatchRef = useRef<string | null>(null);
 
   const pdfSearch = usePdfSearch(document, (page) => {
     zoomAnchorRef.current = null;
     setPageNumber(page);
   });
+
+  const activeMatchIndex =
+    pdfSearch.status === "done" &&
+    pdfSearch.activeMatch?.pageNumber === pageNumber
+      ? pdfSearch.activeMatch.indexOnPage
+      : null;
+
+  const activeMatchKey =
+    activeMatchIndex !== null
+      ? [
+          document?.fingerprints[0],
+          pdfSearch.query,
+          pdfSearch.selectedIndex,
+        ].join(":")
+      : null;
+
+  useEffect(() => {
+    if (pdfSearch.status !== "done") {
+      lastCenteredMatchRef.current = null;
+    }
+  }, [pdfSearch.status]);
+
+  const centerActiveMatch = useCallback(
+    (range: Range): void => {
+      if (!activeMatchKey || lastCenteredMatchRef.current === activeMatchKey) {
+        return;
+      }
+
+      const viewport = viewportRef.current;
+
+      if (!viewport) return;
+
+      const matchRect = Array.from(range.getClientRects()).find(
+        (rect) => rect.width > 0 && rect.height > 0,
+      );
+
+      if (!matchRect) return;
+
+      const viewportRect = viewport.getBoundingClientRect();
+
+      const viewportCenterX = viewportRect.left + viewportRect.width / 2;
+
+      const viewportCenterY = viewportRect.top + viewportRect.height / 2;
+
+      const matchCenterX = matchRect.left + matchRect.width / 2;
+
+      const matchCenterY = matchRect.top + matchRect.height / 2;
+
+      const deltaX = matchCenterX - viewportCenterX;
+      const deltaY = matchCenterY - viewportCenterY;
+
+      viewport.scrollLeft += deltaX;
+      viewport.scrollTop += deltaY;
+
+      lastCenteredMatchRef.current = activeMatchKey;
+    },
+    [activeMatchKey],
+  );
 
   const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
@@ -429,6 +488,8 @@ function App() {
           pageNumber={pageNumber}
           zoom={zoom}
           highlightQuery={pdfSearch.status === "done" ? pdfSearch.query : null}
+          activeMatchIndex={activeMatchIndex}
+          onActiveMatchReady={centerActiveMatch}
           onError={setError}
           onCanvasLayout={restoreZoomPosition}
         />
