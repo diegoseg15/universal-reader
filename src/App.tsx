@@ -20,6 +20,8 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { ReaderShell } from "./features/reader/ReaderShell";
 import { PdfCanvasPage } from "./features/reader/pdf/PdfCanvasPage";
 
+import { usePdfSearch } from "./features/reader/pdf/usePdfSearch";
+
 import {
   closePDF,
   LocalPDFTransport,
@@ -72,6 +74,11 @@ function App() {
 
   const viewportRef = useRef<HTMLElement | null>(null);
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+
+  const pdfSearch = usePdfSearch(document, (page) => {
+    zoomAnchorRef.current = null;
+    setPageNumber(page);
+  });
 
   const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
@@ -201,6 +208,8 @@ function App() {
 
       setLoading(true);
       setError(null);
+
+      pdfSearch.clearSearch();
 
       zoomAnchorRef.current = null;
 
@@ -396,6 +405,21 @@ function App() {
         onDecrease: () =>
           changeZoom(Math.max(MIN_ZOOM, (zoom ?? 1) - ZOOM_STEP)),
         onFit: () => changeZoom(null),
+      }}
+      search={{
+        query: pdfSearch.query,
+        status: pdfSearch.status,
+        scannedPages: pdfSearch.scannedPages,
+        totalPages: document?.numPages ?? 0,
+        pagesWithMatches: pdfSearch.pages.length,
+        totalMatches: pdfSearch.totalMatches,
+        selectedIndex: pdfSearch.selectedIndex,
+        error: pdfSearch.error,
+
+        onQueryChange: pdfSearch.changeQuery,
+        onSearch: pdfSearch.search,
+        onPrevious: pdfSearch.previousResult,
+        onNext: pdfSearch.nextResult,
       }}
     >
       {document && (

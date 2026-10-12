@@ -10,6 +10,24 @@ type ReaderZoomControls = {
   onFit: () => void;
 };
 
+type ReaderSearchControls = {
+  query: string;
+  status: "idle" | "searching" | "done" | "error";
+
+  scannedPages: number;
+  totalPages: number;
+  pagesWithMatches: number;
+  totalMatches: number;
+  selectedIndex: number;
+
+  error: string | null;
+
+  onQueryChange: (value: string) => void;
+  onSearch: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+};
+
 type ReaderShellProps = {
   title: string;
   loading: boolean;
@@ -20,6 +38,8 @@ type ReaderShellProps = {
   pageCount: number | null;
 
   zoom?: ReaderZoomControls;
+
+  search?: ReaderSearchControls;
 
   viewportRef?: Ref<HTMLElement>;
 
@@ -38,6 +58,7 @@ export function ReaderShell({
   pageNumber,
   pageCount,
   zoom,
+  search,
   viewportRef,
   onSelectFile,
   onPrevious,
@@ -138,6 +159,97 @@ export function ReaderShell({
             </div>
           )}
         </div>
+      )}
+
+      {hasDocument && search && (
+        <form
+          className="reader-search"
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            search.onSearch();
+          }}
+        >
+          <div className="reader-search__field">
+            <label
+              className="reader-search__label"
+              htmlFor="reader-search-input"
+            >
+              Buscar en este PDF
+            </label>
+
+            <div className="reader-search__input-group">
+              <input
+                id="reader-search-input"
+                type="search"
+                className="reader-search__input"
+                placeholder="Escribe una palabra o frase"
+                value={search.query}
+                onChange={(event) => search.onQueryChange(event.target.value)}
+                autoComplete="off"
+              />
+
+              <button
+                type="submit"
+                className="reader-button reader-button--primary"
+                disabled={
+                  loading ||
+                  search.status === "searching" ||
+                  !search.query.trim()
+                }
+              >
+                Buscar
+              </button>
+            </div>
+          </div>
+
+          <div className="reader-search__results">
+            <span
+              className="reader-search__status"
+              role="status"
+              aria-live="polite"
+            >
+              {search.status === "searching"
+                ? `Buscando: ${search.scannedPages} de ${search.totalPages} páginas`
+                : search.status === "error"
+                  ? `Error: ${search.error ?? "No se pudo buscar"}`
+                  : search.status === "done"
+                    ? search.pagesWithMatches > 0
+                      ? `${search.totalMatches} coincidencias en ${search.pagesWithMatches} páginas`
+                      : "No se encontraron coincidencias"
+                    : "Introduce un término y pulsa Buscar"}
+            </span>
+
+            {search.status === "done" && search.pagesWithMatches > 0 && (
+              <div className="reader-search__navigation">
+                <span className="reader-search__counter">
+                  Página con resultados {search.selectedIndex + 1} de{" "}
+                  {search.pagesWithMatches}
+                </span>
+
+                <button
+                  type="button"
+                  className="reader-button reader-button--icon"
+                  aria-label="Página anterior con resultados"
+                  onClick={search.onPrevious}
+                  disabled={search.pagesWithMatches <= 1}
+                >
+                  ‹
+                </button>
+
+                <button
+                  type="button"
+                  className="reader-button reader-button--icon"
+                  aria-label="Página siguiente con resultados"
+                  onClick={search.onNext}
+                  disabled={search.pagesWithMatches <= 1}
+                >
+                  ›
+                </button>
+              </div>
+            )}
+          </div>
+        </form>
       )}
 
       {error && (
