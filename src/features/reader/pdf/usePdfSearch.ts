@@ -90,7 +90,9 @@ export function usePdfSearch(
     setScannedPages(0);
     setError(null);
 
-    async function scanDocument(): Promise<void> {
+    async function scanDocument(
+      activeDocument: PDFDocumentProxy,
+    ): Promise<void> {
       const foundPages: SearchPage[] = [];
 
       for (
@@ -148,7 +150,7 @@ export function usePdfSearch(
       }
     }
 
-    void scanDocument().catch((cause: unknown) => {
+    void scanDocument(activeDocument).catch((cause: unknown) => {
       if (version !== searchVersionRef.current) {
         return;
       }
