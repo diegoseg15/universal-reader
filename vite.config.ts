@@ -14,6 +14,9 @@ export default defineConfig(() => ({
         {
           src: "node_modules/pdfjs-dist/wasm/*",
           dest: "pdfjs-wasm",
+          rename: {
+            stripBase: true,
+          },
         },
       ],
     }),
