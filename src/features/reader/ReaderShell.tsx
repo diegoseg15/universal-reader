@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import { useEffect, useRef, type ReactNode, type Ref } from "react";
 import "./ReaderShell.css";
 
 type ReaderZoomControls = {
@@ -66,6 +66,40 @@ export function ReaderShell({
   children,
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const searchAvailable = hasDocument && search !== undefined && !loading;
+
+  useEffect(() => {
+    if (!searchAvailable) return;
+
+    function handleSearchShortcut(event: KeyboardEvent): void {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.altKey ||
+        event.shiftKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== "f"
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const input = searchInputRef.current;
+
+      input?.focus();
+      input?.select();
+    }
+
+    window.addEventListener("keydown", handleSearchShortcut, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleSearchShortcut, true);
+    };
+  }, [searchAvailable]);
 
   return (
     <main className="reader-shell">
@@ -180,12 +214,42 @@ export function ReaderShell({
 
             <div className="reader-search__input-group">
               <input
+                ref={searchInputRef}
                 id="reader-search-input"
                 type="search"
                 className="reader-search__input"
                 placeholder="Escribe una palabra o frase"
                 value={search.query}
                 onChange={(event) => search.onQueryChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) {
+                    return;
+                  }
+
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+
+                    search.onQueryChange("");
+                    event.currentTarget.blur();
+
+                    return;
+                  }
+
+                  if (
+                    event.key === "Enter" &&
+                    search.status === "done" &&
+                    search.totalMatches > 0
+                  ) {
+                    event.preventDefault();
+
+                    if (event.shiftKey) {
+                      search.onPrevious();
+                    } else {
+                      search.onNext();
+                    }
+                  }
+                }}
+                aria-keyshortcuts="Control+F Meta+F"
                 autoComplete="off"
               />
 
