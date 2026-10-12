@@ -1,0 +1,91 @@
+
+# ==========================================================
+# UNIVERSAL READER - GITIGNORE
+# ==========================================================
+
+# Dependencies
+node_modules/
+
+# Frontend build
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+
+# Rust / Tauri build
+target/
+src-tauri/target/
+
+# Generated native projects and schemas
+src-tauri/gen/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment variables
+.env
+.env.*
+*.local
+!.env.example
+!.env.*.example
+
+# Local databases and runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Personal library files
+*.pdf
+*.epub
+*.cbz
+*.cbr
+
+# Local content directories
+books/
+library/
+local-library/
+test-data/private/
+
+# Signing keys and certificates
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+key.properties
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating systems
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
