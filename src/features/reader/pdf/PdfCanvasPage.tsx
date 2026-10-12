@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   PDFDocumentProxy,
@@ -12,17 +12,26 @@ type PdfCanvasPageProps = {
   onError: (message: string) => void;
 };
 
+type CanvasRendererProps = PdfCanvasPageProps & {
+  availableWidth: number;
+};
+
+const MAX_PAGE_WIDTH = 960;
+const MAX_CANVAS_PIXELS = 12_000_000;
+const MAX_PIXEL_RATIO = 2;
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : String(error);
 }
 
-export function PdfCanvasPage({
+function CanvasRenderer({
   document,
   pageNumber,
+  availableWidth,
   onError,
-}: PdfCanvasPageProps) {
+}: CanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -44,40 +53,61 @@ export function PdfCanvasPage({
         scale: 1,
       });
 
-      const availableWidth = Math.min(
-        canvas.parentElement?.clientWidth ??
-          window.innerWidth,
-        960,
+      if (
+        !Number.isFinite(baseViewport.width) ||
+        baseViewport.width <= 0
+      ) {
+        throw new Error(
+          "El PDF contiene dimensiones de página inválidas.",
+        );
+      }
+
+      // Fit the document to the available viewport width.
+      const targetWidth = Math.min(
+        Math.max(1, availableWidth - 24),
+        MAX_PAGE_WIDTH,
       );
 
-      const scale = Math.max(
-        0.1,
-        Math.min(
-          1.5,
-          (availableWidth - 24) /
-            baseViewport.width,
-        ),
+      const scale = Math.min(
+        1.5,
+        targetWidth / baseViewport.width,
       );
 
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({
+        scale,
+      });
 
       const requestedRatio = Math.min(
         window.devicePixelRatio || 1,
-        2,
+        MAX_PIXEL_RATIO,
       );
 
-      const maxPixels = 12_000_000;
+      // Limit the number of allocated canvas pixels.
+      const memoryRatio = Math.sqrt(
+        MAX_CANVAS_PIXELS /
+          (viewport.width * viewport.height),
+      );
 
       const ratio = Math.min(
         requestedRatio,
-        Math.sqrt(
-          maxPixels /
-            (viewport.width * viewport.height),
-        ),
+        memoryRatio,
       );
 
-      canvas.width = Math.ceil(viewport.width * ratio);
-      canvas.height = Math.ceil(viewport.height * ratio);
+      if (!Number.isFinite(ratio) || ratio <= 0) {
+        throw new Error(
+          "No se pudo calcular la resolución de la página.",
+        );
+      }
+
+      canvas.width = Math.max(
+        1,
+        Math.floor(viewport.width * ratio),
+      );
+
+      canvas.height = Math.max(
+        1,
+        Math.floor(viewport.height * ratio),
+      );
 
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
@@ -101,36 +131,102 @@ export function PdfCanvasPage({
 
     void renderPage().catch((error: unknown) => {
       if (
-        !cancelled &&
-        !(error instanceof Error &&
-          error.name === "RenderingCancelledException")
+        cancelled ||
+        (error instanceof Error &&
+          error.name ===
+            "RenderingCancelledException")
       ) {
-        onError(getErrorMessage(error));
+        return;
       }
+
+      onError(getErrorMessage(error));
     });
 
     return () => {
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [document, pageNumber, onError]);
+  }, [
+    document,
+    pageNumber,
+    availableWidth,
+    onError,
+  ]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-label={`Página ${pageNumber} del PDF`}
+      role="img"
+      style={{
+        display: "block",
+        marginInline: "auto",
+        maxWidth: "100%",
+        background: "#FFFFFF",
+      }}
+    />
+  );
+}
+
+export function PdfCanvasPage({
+  document,
+  pageNumber,
+  onError,
+}: PdfCanvasPageProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] =
+    useState(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let animationFrame = 0;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+
+      const nextWidth = Math.floor(
+        entry.contentRect.width,
+      );
+
+      cancelAnimationFrame(animationFrame);
+
+      animationFrame = requestAnimationFrame(() => {
+        setAvailableWidth((currentWidth) =>
+          currentWidth === nextWidth
+            ? currentWidth
+            : nextWidth,
+        );
+      });
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(animationFrame);
+    };
+  }, []);
 
   return (
     <div
+      ref={containerRef}
       style={{
         width: "100%",
-        display: "flex",
-        justifyContent: "center",
+        minWidth: 0,
       }}
     >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          maxWidth: "100%",
-          background: "#FFFFFF",
-        }}
-      />
+      {availableWidth > 0 && (
+        <CanvasRenderer
+          key={`${document.fingerprints[0]}-${pageNumber}-${availableWidth}`}
+          document={document}
+          pageNumber={pageNumber}
+          availableWidth={availableWidth}
+          onError={onError}
+        />
+      )}
     </div>
   );
 }
