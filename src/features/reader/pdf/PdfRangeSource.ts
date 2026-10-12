@@ -1,6 +1,8 @@
 
-import type { FileHandle } from "@tauri-apps/plugin-fs";
-import { SeekMode } from "@tauri-apps/plugin-fs";
+import {
+  SeekMode,
+  type FileHandle,
+} from "@tauri-apps/plugin-fs";
 
 import {
   PDFDataRangeTransport,
@@ -10,15 +12,24 @@ import {
 export type ActivePDF = {
   file: FileHandle;
   task: PDFDocumentLoadingTask;
+  transport: LocalPDFTransport;
 };
 
 export async function closePDF(
   active: ActivePDF,
 ): Promise<void> {
+  // Prevent new range responses from reaching PDF.js.
+  active.transport.abort();
+
   try {
     await active.task.destroy();
   } finally {
-    await active.file.close();
+    try {
+      // Do not close the file during an active seek/read.
+      await active.transport.waitForIdle();
+    } finally {
+      await active.file.close();
+    }
   }
 }
 
@@ -46,7 +57,10 @@ export async function readRange(
       buffer.subarray(offset),
     );
 
-    if (bytesRead === null || bytesRead <= 0) {
+    if (
+      bytesRead === null ||
+      bytesRead <= 0
+    ) {
       throw new Error(
         `Lectura incompleta en el byte ${begin + offset}.`,
       );
@@ -79,25 +93,34 @@ export class LocalPDFTransport extends PDFDataRangeTransport {
     begin: number,
     end: number,
   ): void {
+    if (this.stopped) return;
+
     this.queue = this.queue
       .then(async () => {
         if (this.stopped) return;
 
-        const bytes = await this.getRange(begin, end);
+        const bytes = await this.getRange(
+          begin,
+          end,
+        );
 
         if (!this.stopped) {
           this.onDataRange(begin, bytes);
         }
       })
       .catch((error: unknown) => {
-        if (!this.stopped) {
-          this.stopped = true;
-          this.onFailure(error);
-        }
+        if (this.stopped) return;
+
+        this.stopped = true;
+        this.onFailure(error);
       });
   }
 
   override abort(): void {
     this.stopped = true;
+  }
+
+  async waitForIdle(): Promise<void> {
+    await this.queue;
   }
 }

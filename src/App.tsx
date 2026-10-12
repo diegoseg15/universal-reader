@@ -1,6 +1,8 @@
+
 import { useEffect, useRef, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
+
 import {
   open as openFile,
   SeekMode,
@@ -28,21 +30,65 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+type PendingPDF = {
+  cancelled: boolean;
+  file: FileHandle | null;
+  task: PDFDocumentLoadingTask | null;
+  transport: LocalPDFTransport | null;
+  destroyPromise: Promise<void> | null;
+  failure: unknown;
+};
+
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error
+    ? error.message
+    : String(error);
+}
+
+function destroyPendingTask(
+  pending: PendingPDF,
+): Promise<void> {
+  if (!pending.task) {
+    return Promise.resolve();
+  }
+
+  // Share the same destruction promise across callers.
+  pending.destroyPromise ??= pending.task.destroy();
+
+  return pending.destroyPromise;
 }
 
 function App() {
-  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [document, setDocument] =
+    useState<PDFDocumentProxy | null>(null);
 
   const [pageNumber, setPageNumber] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
+  const openingRef = useRef<PendingPDF | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
+      mountedRef.current = false;
+
+      const pending = openingRef.current;
+
+      if (pending) {
+        pending.cancelled = true;
+        pending.transport?.abort();
+
+        if (pending.task) {
+          void destroyPendingTask(pending).catch(
+            console.error,
+          );
+        }
+      }
+
       const active = activeRef.current;
       activeRef.current = null;
 
@@ -53,11 +99,21 @@ function App() {
   }, []);
 
   async function selectPDF(): Promise<void> {
-    if (loading) return;
+    // The ref blocks re-entry before React updates state.
+    if (openingRef.current || !mountedRef.current) {
+      return;
+    }
 
-    let pendingFile: FileHandle | null = null;
-    let pendingTask: PDFDocumentLoadingTask | null = null;
-    let taskForError: PDFDocumentLoadingTask | null = null;
+    const pending: PendingPDF = {
+      cancelled: false,
+      file: null,
+      task: null,
+      transport: null,
+      destroyPromise: null,
+      failure: undefined,
+    };
+
+    openingRef.current = pending;
 
     try {
       const selected = await open({
@@ -71,7 +127,8 @@ function App() {
         ],
       });
 
-      if (!selected) return;
+      // Cancelling the dialog preserves the current PDF.
+      if (!selected || pending.cancelled) return;
 
       setLoading(true);
       setError(null);
@@ -84,81 +141,198 @@ function App() {
         await closePDF(previous);
       }
 
+      if (pending.cancelled) return;
+
       const file = await openFile(selected, {
         read: true,
       });
 
-      pendingFile = file;
+      pending.file = file;
+
+      if (pending.cancelled) return;
 
       const size = await file.seek(0, SeekMode.End);
 
-      if (!Number.isSafeInteger(size) || size < 5) {
+      if (
+        !Number.isSafeInteger(size) ||
+        size < 5
+      ) {
         throw new Error("Tamaño de PDF inválido.");
       }
 
-      const signature = await readRange(file, 0, 5);
+      const signature = await readRange(
+        file,
+        0,
+        5,
+      );
 
-      const validPDF = [0x25, 0x50, 0x44, 0x46, 0x2d].every(
+      if (pending.cancelled) return;
+
+      const validPDF = [
+        0x25,
+        0x50,
+        0x44,
+        0x46,
+        0x2d,
+      ].every(
         (value, index) => signature[index] === value,
       );
 
       if (!validPDF) {
-        throw new Error("El archivo no tiene una cabecera PDF válida.");
+        throw new Error(
+          "El archivo no tiene una cabecera PDF válida.",
+        );
       }
 
       const transport = new LocalPDFTransport(
         size,
         (begin, end) => {
           if (end > size) {
-            throw new Error("Rango fuera del documento.");
+            throw new Error(
+              "Rango fuera del documento.",
+            );
           }
 
           return readRange(file, begin, end);
         },
         (cause) => {
-          setError(`Error de lectura parcial: ${getErrorMessage(cause)}`);
+          // Ignore failures from a cancelled/closed PDF.
+          if (
+            pending.cancelled ||
+            !mountedRef.current
+          ) {
+            return;
+          }
 
-          void taskForError?.destroy().catch(console.error);
+          const active = activeRef.current;
+
+          // The transport must still belong to the
+          // pending task or the currently active PDF.
+          if (
+            !pending.task &&
+            active?.transport !== transport
+          ) {
+            return;
+          }
+
+          pending.failure = cause;
+
+          setError(
+            `Error de lectura parcial: ${getErrorMessage(cause)}`,
+          );
+
+          if (active?.transport === transport) {
+            activeRef.current = null;
+            setDocument(null);
+
+            void closePDF(active).catch(
+              console.error,
+            );
+          } else {
+            void destroyPendingTask(pending).catch(
+              console.error,
+            );
+          }
         },
       );
 
-      pendingTask = getDocument({
+      pending.transport = transport;
+
+      const task = getDocument({
         range: transport,
         disableStream: true,
         disableAutoFetch: true,
         rangeChunkSize: 64 * 1024,
         wasmUrl: new URL(
           "pdfjs-wasm/",
-          new URL(import.meta.env.BASE_URL, window.location.origin),
+          new URL(
+            import.meta.env.BASE_URL,
+            window.location.origin,
+          ),
         ).href,
       });
 
-      taskForError = pendingTask;
+      pending.task = task;
 
-      const loadedDocument = await pendingTask.promise;
+      const loadedDocument = await task.promise;
+
+      if (
+        pending.cancelled ||
+        task.destroyed ||
+        pending.failure !== undefined
+      ) {
+        return;
+      }
 
       activeRef.current = {
         file,
-        task: pendingTask,
+        task,
+        transport,
       };
 
-      pendingFile = null;
-      pendingTask = null;
+      // Ownership has moved to activeRef.
+      pending.file = null;
+      pending.task = null;
+      pending.transport = null;
 
       setPageNumber(1);
       setDocument(loadedDocument);
     } catch (cause) {
-      setError(getErrorMessage(cause));
+      if (
+        !pending.cancelled &&
+        mountedRef.current
+      ) {
+        setError(
+          `No se pudo abrir el PDF: ${getErrorMessage(
+            pending.failure ?? cause,
+          )}`,
+        );
+      }
     } finally {
-      if (pendingTask) {
-        await pendingTask.destroy().catch(console.error);
+      // Cleanup owns any resources not promoted
+      // to activeRef.
+      pending.transport?.abort();
+
+      if (pending.task) {
+        try {
+          await destroyPendingTask(pending);
+        } catch (cause) {
+          console.error(
+            "Error al destruir PDF pendiente:",
+            cause,
+          );
+        }
       }
 
-      if (pendingFile) {
-        await pendingFile.close().catch(console.error);
+      if (pending.transport) {
+        try {
+          await pending.transport.waitForIdle();
+        } catch (cause) {
+          console.error(
+            "Error al esperar lecturas PDF:",
+            cause,
+          );
+        }
       }
 
-      setLoading(false);
+      if (pending.file) {
+        try {
+          await pending.file.close();
+        } catch (cause) {
+          console.error(
+            "Error al cerrar archivo PDF:",
+            cause,
+          );
+        }
+      }
+
+      if (openingRef.current === pending) {
+        openingRef.current = null;
+
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
     }
   }
 
@@ -167,14 +341,23 @@ function App() {
       title="Universal Reader"
       loading={loading}
       error={error}
-      documentKey={document?.fingerprints[0] ?? null}
+      documentKey={
+        document?.fingerprints[0] ?? null
+      }
       pageNumber={document ? pageNumber : null}
       pageCount={document?.numPages ?? null}
       onSelectFile={() => void selectPDF()}
-      onPrevious={() => setPageNumber((current) => Math.max(1, current - 1))}
+      onPrevious={() =>
+        setPageNumber((current) =>
+          Math.max(1, current - 1),
+        )
+      }
       onNext={() =>
         setPageNumber((current) =>
-          Math.min(document?.numPages ?? current, current + 1),
+          Math.min(
+            document?.numPages ?? current,
+            current + 1,
+          ),
         )
       }
     >
