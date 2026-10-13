@@ -2,6 +2,7 @@
 declare module "foliate-js/view.js" {
   export interface FoliateSection {
     id?: string;
+    linear?: string;
     createDocument(): Document | Promise<Document>;
   }
 
@@ -14,7 +15,12 @@ declare module "foliate-js/view.js" {
     sections: FoliateSection[];
     toc?: unknown[];
 
+    resources?: {
+      navPath?: string;
+    };
+
     loadText(uri: string): Promise<string | null>;
+    getCover?(): Promise<Blob | null>;
 
     destroy?(): void;
   }

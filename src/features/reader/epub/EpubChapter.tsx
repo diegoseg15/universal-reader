@@ -120,6 +120,28 @@ export function EpubChapter({ session, sectionIndex }: EpubChapterProps) {
         <p role="status">Cargando sección...</p>
       ) : error ? (
         <p role="alert">No se pudo leer esta sección: {error}</p>
+      ) : content?.coverUrl ? (
+        <figure
+          style={{
+            margin: 0,
+            textAlign: "center",
+          }}
+        >
+          <img
+            src={content.coverUrl}
+            alt={`Portada de ${session.summary.title}`}
+            decoding="async"
+            style={{
+              display: "block",
+              width: "100%",
+              maxWidth: "520px",
+              maxHeight: "75vh",
+              height: "auto",
+              objectFit: "contain",
+              marginInline: "auto",
+            }}
+          />
+        </figure>
       ) : content?.blocks.length ? (
         <div>
           {content.blocks.map((block, index) =>

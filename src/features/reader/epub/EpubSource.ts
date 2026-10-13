@@ -18,6 +18,7 @@ export type EpubTextBlock = {
 export type EpubSectionContent = {
   blocks: EpubTextBlock[];
   recoveredFromHtml?: boolean;
+  coverUrl?: string;
 };
 
 export type EpubSession = {
@@ -379,12 +380,25 @@ export async function openEpub(
   const { makeBook } = await import("foliate-js/view.js");
 
   let book: Awaited<ReturnType<typeof makeBook>>;
+  let readingSectionIndexes: number[] = [];
 
   try {
     book = await makeBook(blob);
 
     if (!Array.isArray(book.sections) || book.sections.length === 0) {
       throw new Error("El EPUB no contiene secciones de lectura válidas.");
+    }
+
+    const navigationPath = book.resources?.navPath;
+
+    // Preserve original spine positions, excluding only
+    // the identified EPUB navigation document.
+    readingSectionIndexes = book.sections.flatMap((section, index) =>
+      navigationPath && section.id === navigationPath ? [] : [index],
+    );
+
+    if (readingSectionIndexes.length === 0) {
+      throw new Error("El EPUB no contiene secciones navegables.");
     }
   } catch (cause) {
     await source.waitForIdle();
@@ -394,7 +408,7 @@ export async function openEpub(
   const summary: EpubSummary = {
     title: readableMetadata(book.metadata?.title) ?? "Libro sin título",
     author: readableMetadata(book.metadata?.author) ?? "Autor desconocido",
-    sectionCount: book.sections.length,
+    sectionCount: readingSectionIndexes.length,
     tocCount: Array.isArray(book.toc) ? book.toc.length : 0,
     fileName,
   };
@@ -402,6 +416,44 @@ export async function openEpub(
   const readingTasks = new Set<Promise<EpubSectionContent>>();
 
   let closePromise: Promise<void> | null = null;
+
+  const MAX_COVER_BYTES = 8 * 1024 * 1024;
+
+  const ALLOWED_COVER_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ]);
+
+  let coverUrl: string | null = null;
+  let coverRequest: Promise<string | null> | null = null;
+
+  function getCoverUrl(): Promise<string | null> {
+    if (!coverRequest) {
+      coverRequest = (async () => {
+        const cover = await book.getCover?.();
+
+        if (!cover) return null;
+
+        if (
+          !ALLOWED_COVER_TYPES.has(cover.type.toLowerCase()) ||
+          cover.size <= 0 ||
+          cover.size > MAX_COVER_BYTES
+        ) {
+          throw new Error(
+            "La portada EPUB tiene un formato o tamaño no admitido.",
+          );
+        }
+
+        coverUrl = URL.createObjectURL(cover);
+
+        return coverUrl;
+      })();
+    }
+
+    return coverRequest;
+  }
 
   function readSection(index: number): Promise<EpubSectionContent> {
     if (closePromise) {
@@ -411,12 +463,31 @@ export async function openEpub(
     if (
       !Number.isInteger(index) ||
       index < 0 ||
-      index >= book.sections.length
+      index >= readingSectionIndexes.length
     ) {
       return Promise.reject(new Error("Sección EPUB fuera de rango."));
     }
 
-    const task = Promise.resolve().then(() => readBookSection(book, index));
+    const task = Promise.resolve().then(async () => {
+      const sourceIndex = readingSectionIndexes[index];
+
+      const content = await readBookSection(book, sourceIndex);
+
+      // A textless opening section commonly contains
+      // the book cover.
+      if (index === 0 && content.blocks.length === 0) {
+        const url = await getCoverUrl();
+
+        if (url) {
+          return {
+            ...content,
+            coverUrl: url,
+          };
+        }
+      }
+
+      return content;
+    });
 
     readingTasks.add(task);
 
@@ -444,7 +515,14 @@ export async function openEpub(
         try {
           await source.waitForIdle();
         } finally {
-          await file.close();
+          try {
+            await file.close();
+          } finally {
+            if (coverUrl) {
+              URL.revokeObjectURL(coverUrl);
+              coverUrl = null;
+            }
+          }
         }
       }
     })();
