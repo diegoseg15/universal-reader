@@ -6,6 +6,12 @@ declare module "foliate-js/view.js" {
     createDocument(): Document | Promise<Document>;
   }
 
+  export interface FoliateTocItem {
+    label: string;
+    href?: string;
+    subitems?: FoliateTocItem[];
+  }
+
   export interface FoliateBook {
     metadata?: {
       title?: unknown;
@@ -13,7 +19,7 @@ declare module "foliate-js/view.js" {
     };
 
     sections: FoliateSection[];
-    toc?: unknown[];
+    toc?: FoliateTocItem[];
 
     resources?: {
       navPath?: string;
@@ -21,6 +27,12 @@ declare module "foliate-js/view.js" {
 
     loadText(uri: string): Promise<string | null>;
     getCover?(): Promise<Blob | null>;
+
+    resolveHref?(href: string): {
+      index: number;
+    } | null;
+
+    isExternal?(href: string): boolean;
 
     destroy?(): void;
   }

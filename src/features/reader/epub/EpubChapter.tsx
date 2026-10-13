@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
 type EpubChapterProps = {
   session: EpubSession;
   sectionIndex: number;
+  onNavigateSection: (index: number) => void;
 };
 
 type ChapterResult = {
@@ -18,8 +19,18 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function EpubChapter({ session, sectionIndex }: EpubChapterProps) {
+export function EpubChapter({
+  session,
+  sectionIndex,
+  onNavigateSection,
+}: EpubChapterProps) {
   const [result, setResult] = useState<ChapterResult | null>(null);
+
+  const tocRef = useRef<HTMLDetailsElement>(null);
+
+  const sectionTitle = session.toc.find(
+    (entry) => entry.sectionIndex === sectionIndex,
+  )?.title;
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +101,7 @@ export function EpubChapter({ session, sectionIndex }: EpubChapterProps) {
             lineHeight: 1.25,
           }}
         >
-          Sección {sectionIndex + 1}
+          {sectionTitle ?? `Sección ${sectionIndex + 1}`}
         </h1>
 
         <p style={{ margin: 0, color: "#64748b" }}>
@@ -98,6 +109,93 @@ export function EpubChapter({ session, sectionIndex }: EpubChapterProps) {
           {session.summary.sectionCount}
         </p>
       </header>
+
+      {session.toc.length > 0 && (
+        <details
+          ref={tocRef}
+          style={{
+            marginBottom: "24px",
+            border: "1px solid #e5e7eb",
+            borderRadius: "8px",
+            overflow: "hidden",
+          }}
+        >
+          <summary
+            style={{
+              padding: "12px 16px",
+              cursor: "pointer",
+              fontWeight: 600,
+              background: "#f8fafc",
+            }}
+          >
+            Índice del libro
+          </summary>
+
+          <nav
+            aria-label="Índice de capítulos EPUB"
+            style={{
+              maxHeight: "320px",
+              overflowY: "auto",
+              padding: "8px",
+            }}
+          >
+            {session.toc.map((entry) => {
+              const target = entry.sectionIndex;
+              const isCurrent = target !== null && target === sectionIndex;
+
+              return (
+                <div
+                  key={entry.id}
+                  style={{
+                    paddingLeft: `${Math.min(entry.depth, 4) * 12}px`,
+                  }}
+                >
+                  {target === null ? (
+                    <span
+                      style={{
+                        display: "block",
+                        padding: "10px",
+                        color: "#64748b",
+                        fontWeight: 600,
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {entry.title}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-current={isCurrent ? "location" : undefined}
+                      onClick={() => {
+                        onNavigateSection(target);
+
+                        if (tocRef.current) {
+                          tocRef.current.open = false;
+                        }
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "10px",
+                        border: 0,
+                        borderRadius: "6px",
+                        background: isCurrent ? "#e2e8f0" : "transparent",
+                        color: "#1f2937",
+                        font: "inherit",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {entry.title}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </nav>
+        </details>
+      )}
 
       {content?.recoveredFromHtml && (
         <p

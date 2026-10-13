@@ -1,6 +1,6 @@
 import { SeekMode, type FileHandle } from "@tauri-apps/plugin-fs";
 
-import type { FoliateBook } from "foliate-js/view.js";
+import type { FoliateBook, FoliateTocItem } from "foliate-js/view.js";
 
 export type EpubSummary = {
   title: string;
@@ -21,8 +21,16 @@ export type EpubSectionContent = {
   coverUrl?: string;
 };
 
+export type EpubTocEntry = {
+  id: string;
+  title: string;
+  sectionIndex: number | null;
+  depth: number;
+};
+
 export type EpubSession = {
   summary: EpubSummary;
+  toc: EpubTocEntry[];
   readSection: (index: number) => Promise<EpubSectionContent>;
   close: () => Promise<void>;
 };
@@ -362,6 +370,77 @@ async function readBookSection(
   };
 }
 
+const MAX_TOC_ENTRIES = 1000;
+const MAX_TOC_DEPTH = 8;
+
+function buildEpubToc(
+  book: FoliateBook,
+  readingSectionIndexes: number[],
+): EpubTocEntry[] {
+  const visibleIndexBySource = new Map<number, number>(
+    readingSectionIndexes.map((sourceIndex, visibleIndex) => [
+      sourceIndex,
+      visibleIndex,
+    ]),
+  );
+
+  const entries: EpubTocEntry[] = [];
+
+  function visit(items: FoliateTocItem[], depth: number): void {
+    if (depth > MAX_TOC_DEPTH) return;
+
+    for (const item of items) {
+      if (entries.length >= MAX_TOC_ENTRIES) return;
+
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+
+      const title =
+        typeof item.label === "string" ? item.label.trim().slice(0, 200) : "";
+
+      let sectionIndex: number | null = null;
+
+      if (typeof item.href === "string" && item.href.length > 0) {
+        try {
+          if (!book.isExternal?.(item.href)) {
+            const destination = book.resolveHref?.(item.href);
+
+            if (destination && Number.isInteger(destination.index)) {
+              sectionIndex =
+                visibleIndexBySource.get(destination.index) ?? null;
+            }
+          }
+        } catch (cause) {
+          console.warn(
+            "No se pudo resolver una entrada del índice EPUB:",
+            cause,
+          );
+        }
+      }
+
+      if (title) {
+        entries.push({
+          id: `toc-${entries.length}`,
+          title,
+          sectionIndex,
+          depth,
+        });
+      }
+
+      if (Array.isArray(item.subitems)) {
+        visit(item.subitems, depth + 1);
+      }
+    }
+  }
+
+  if (Array.isArray(book.toc)) {
+    visit(book.toc, 0);
+  }
+
+  return entries;
+}
+
 export async function openEpub(
   file: FileHandle,
   size: number,
@@ -412,6 +491,8 @@ export async function openEpub(
     tocCount: Array.isArray(book.toc) ? book.toc.length : 0,
     fileName,
   };
+
+  const toc = buildEpubToc(book, readingSectionIndexes);
 
   const readingTasks = new Set<Promise<EpubSectionContent>>();
 
@@ -532,6 +613,7 @@ export async function openEpub(
 
   return {
     summary,
+    toc,
     readSection,
     close,
   };

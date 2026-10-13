@@ -577,6 +577,7 @@ function App() {
         <EpubChapter
           session={activeEpubRef.current}
           sectionIndex={epubSectionIndex}
+          onNavigateSection={setEpubSectionIndex}
         />
       ) : null}
     </ReaderShell>
