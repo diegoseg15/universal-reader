@@ -115,7 +115,7 @@ export function ReaderShell({
           onClick={onSelectFile}
           disabled={loading}
         >
-          {loading ? "Abriendo..." : "Abrir PDF"}
+          {loading ? "Abriendo..." : "Abrir documento"}
         </button>
       </header>
 
@@ -335,7 +335,7 @@ export function ReaderShell({
         ) : (
           <div className="reader-empty">
             <h1>Tu próxima lectura comienza aquí</h1>
-            <p>Selecciona un PDF para comenzar a leer.</p>
+            <p>Selecciona un documento PDF o EPUB para comenzar.</p>
           </div>
         )}
       </section>

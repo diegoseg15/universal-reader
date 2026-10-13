@@ -23,6 +23,11 @@ import { PdfCanvasPage } from "./features/reader/pdf/PdfCanvasPage";
 import { usePdfSearch } from "./features/reader/pdf/usePdfSearch";
 
 import {
+  inspectEpub,
+  type EpubSummary,
+} from "./features/reader/epub/EpubSource";
+
+import {
   closePDF,
   LocalPDFTransport,
   readRange,
@@ -66,6 +71,7 @@ function destroyPendingTask(pending: PendingPDF): Promise<void> {
 
 function App() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [epub, setEpub] = useState<EpubSummary | null>(null);
 
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -233,7 +239,7 @@ function App() {
     viewport.scrollTop += targetY - centerY;
   }, []);
 
-  async function selectPDF(): Promise<void> {
+  async function selectDocument(): Promise<void> {
     // The ref blocks re-entry before React updates state.
     if (openingRef.current || !mountedRef.current) {
       return;
@@ -256,8 +262,8 @@ function App() {
         directory: false,
         filters: [
           {
-            name: "Documentos PDF",
-            extensions: ["pdf"],
+            name: "Documentos PDF y EPUB",
+            extensions: ["pdf", "epub"],
           },
         ],
       });
@@ -267,6 +273,8 @@ function App() {
 
       setLoading(true);
       setError(null);
+
+      setEpub(null);
 
       pdfSearch.clearSearch();
 
@@ -305,8 +313,32 @@ function App() {
         (value, index) => signature[index] === value,
       );
 
+      // ZIP local-file header: PK\x03\x04.
+      const validZIP =
+        signature[0] === 0x50 &&
+        signature[1] === 0x4b &&
+        signature[2] === 0x03 &&
+        signature[3] === 0x04;
+
+      if (validZIP) {
+        const fileName = selected.split(/[\\/]/).pop() || "book.epub";
+
+        const summary = await inspectEpub(file, size, fileName);
+
+        if (pending.cancelled) return;
+
+        setPageNumber(1);
+        setZoom(null);
+        setEpub(summary);
+
+        // The existing finally block closes pending.file.
+        return;
+      }
+
       if (!validPDF) {
-        throw new Error("El archivo no tiene una cabecera PDF válida.");
+        throw new Error(
+          "El archivo no tiene una cabecera PDF o EPUB compatible.",
+        );
       }
 
       const transport = new LocalPDFTransport(
@@ -438,10 +470,10 @@ function App() {
       title="Universal Reader"
       loading={loading}
       error={error}
-      documentKey={document?.fingerprints[0] ?? null}
+      documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
       pageNumber={document ? pageNumber : null}
       pageCount={document?.numPages ?? null}
-      onSelectFile={() => void selectPDF()}
+      onSelectFile={() => void selectDocument()}
       viewportRef={viewportRef}
       onPrevious={() => {
         zoomAnchorRef.current = null;
@@ -481,7 +513,7 @@ function App() {
         onNext: pdfSearch.nextResult,
       }}
     >
-      {document && (
+      {document ? (
         <PdfCanvasPage
           key={`${document.fingerprints[0]}-${pageNumber}`}
           document={document}
@@ -493,7 +525,36 @@ function App() {
           onError={setError}
           onCanvasLayout={restoreZoomPosition}
         />
-      )}
+      ) : epub ? (
+        <article
+          aria-label="Información del libro EPUB"
+          style={{
+            width: "min(100%, 680px)",
+            margin: "32px auto",
+            padding: "24px",
+            background: "#ffffff",
+            color: "#1f2937",
+            border: "1px solid #e5e7eb",
+            borderRadius: "12px",
+            overflowWrap: "anywhere",
+          }}
+        >
+          <p>Documento EPUB</p>
+
+          <h1>{epub.title}</h1>
+
+          <p>Autor: {epub.author}</p>
+
+          <p>Secciones de lectura: {epub.sectionCount}</p>
+
+          <p>Entradas principales del índice: {epub.tocCount}</p>
+
+          <p>
+            El archivo se interpretó correctamente. La visualización de
+            capítulos se habilitará en una siguiente etapa.
+          </p>
+        </article>
+      ) : null}
     </ReaderShell>
   );
 }
