@@ -1,0 +1,164 @@
+
+import { useEffect, useState } from "react";
+
+import type {
+  EpubSectionContent,
+  EpubSession,
+} from "./EpubSource";
+
+type EpubChapterProps = {
+  session: EpubSession;
+  sectionIndex: number;
+};
+
+type ChapterResult = {
+  session: EpubSession;
+  index: number;
+  content: EpubSectionContent | null;
+  error: string | null;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : String(error);
+}
+
+export function EpubChapter({
+  session,
+  sectionIndex,
+}: EpubChapterProps) {
+  const [result, setResult] =
+    useState<ChapterResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void session.readSection(sectionIndex).then(
+      (content) => {
+        if (cancelled) return;
+
+        setResult({
+          session,
+          index: sectionIndex,
+          content,
+          error: null,
+        });
+      },
+      (cause: unknown) => {
+        if (cancelled) return;
+
+        setResult({
+          session,
+          index: sectionIndex,
+          content: null,
+          error: getErrorMessage(cause),
+        });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, sectionIndex]);
+
+  const isCurrent =
+    result?.session === session &&
+    result.index === sectionIndex;
+
+  const content = isCurrent
+    ? result.content
+    : null;
+
+  const error = isCurrent
+    ? result.error
+    : null;
+
+  return (
+    <article
+      aria-label="Contenido del libro EPUB"
+      style={{
+        boxSizing: "border-box",
+        width: "min(100%, 760px)",
+        margin: "24px auto",
+        padding: "clamp(20px, 5vw, 48px)",
+        background: "#ffffff",
+        color: "#1f2937",
+        borderRadius: "12px",
+        lineHeight: 1.8,
+        overflowWrap: "anywhere",
+      }}
+    >
+      <header
+        style={{
+          marginBottom: "28px",
+          paddingBottom: "20px",
+          borderBottom: "1px solid #e5e7eb",
+        }}
+      >
+        <p style={{ margin: 0, color: "#64748b" }}>
+          {session.summary.title}
+        </p>
+
+        <h1
+          style={{
+            margin: "8px 0",
+            fontSize: "clamp(22px, 4vw, 30px)",
+            lineHeight: 1.25,
+          }}
+        >
+          Sección {sectionIndex + 1}
+        </h1>
+
+        <p style={{ margin: 0, color: "#64748b" }}>
+          {session.summary.author} ·{" "}
+          {sectionIndex + 1} de{" "}
+          {session.summary.sectionCount}
+        </p>
+      </header>
+
+      {!isCurrent ? (
+        <p role="status">Cargando sección...</p>
+      ) : error ? (
+        <p role="alert">
+          No se pudo leer esta sección: {error}
+        </p>
+      ) : content?.blocks.length ? (
+        <div>
+          {content.blocks.map((block, index) =>
+            block.kind === "heading" ? (
+              <h2
+                key={index}
+                style={{
+                  margin: "24px 0 12px",
+                  fontSize: "1.35rem",
+                  lineHeight: 1.35,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {block.text}
+              </h2>
+            ) : (
+              <p
+                key={index}
+                style={{
+                  margin: "0 0 18px",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {block.text}
+              </p>
+            ),
+          )}
+        </div>
+      ) : (
+        <p>
+          Esta sección no contiene texto extraíble.
+          Puede tratarse de una portada, una ilustración
+          o contenido que todavía no admite este modo
+          de lectura.
+        </p>
+      )}
+    </article>
+  );
+}

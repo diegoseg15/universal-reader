@@ -1,8 +1,4 @@
-
-import {
-  SeekMode,
-  type FileHandle,
-} from "@tauri-apps/plugin-fs";
+import { SeekMode, type FileHandle } from "@tauri-apps/plugin-fs";
 
 export type EpubSummary = {
   title: string;
@@ -10,6 +6,21 @@ export type EpubSummary = {
   sectionCount: number;
   tocCount: number;
   fileName: string;
+};
+
+export type EpubTextBlock = {
+  kind: "heading" | "paragraph";
+  text: string;
+};
+
+export type EpubSectionContent = {
+  blocks: EpubTextBlock[];
+};
+
+export type EpubSession = {
+  summary: EpubSummary;
+  readSection: (index: number) => Promise<EpubSectionContent>;
+  close: () => Promise<void>;
 };
 
 const MAX_EPUB_BYTES = 128 * 1024 * 1024;
@@ -49,9 +60,7 @@ class NativeRangeSource {
       let offset = 0;
 
       while (offset < result.length) {
-        const count = await this.file.read(
-          result.subarray(offset),
-        );
+        const count = await this.file.read(result.subarray(offset));
 
         if (count === null || count <= 0) {
           throw new Error(
@@ -72,6 +81,10 @@ class NativeRangeSource {
 
     return request;
   }
+
+  async waitForIdle(): Promise<void> {
+    await this.queue;
+  }
 }
 
 function clampSliceIndex(index: number, size: number): number {
@@ -82,9 +95,7 @@ function clampSliceIndex(index: number, size: number): number {
 
   const integer = Math.trunc(index);
 
-  return integer < 0
-    ? Math.max(size + integer, 0)
-    : Math.min(integer, size);
+  return integer < 0 ? Math.max(size + integer, 0) : Math.min(integer, size);
 }
 
 /**
@@ -114,11 +125,7 @@ class NativeFileBlob extends Blob {
     return this.end - this.begin;
   }
 
-  override slice(
-    start = 0,
-    end = this.size,
-    _contentType?: string,
-  ): Blob {
+  override slice(start = 0, end = this.size, _contentType?: string): Blob {
     const relativeBegin = clampSliceIndex(start, this.size);
     const relativeEnd = Math.max(
       relativeBegin,
@@ -134,10 +141,7 @@ class NativeFileBlob extends Blob {
   }
 
   override async arrayBuffer(): Promise<ArrayBuffer> {
-    const bytes = await this.source.read(
-      this.begin,
-      this.end,
-    );
+    const bytes = await this.source.read(this.begin, this.end);
 
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
@@ -166,12 +170,7 @@ function readableMetadata(value: unknown): string | null {
       return readableMetadata(record.name);
     }
 
-    for (const key of [
-      "es",
-      "en",
-      "und",
-      ...Object.keys(record),
-    ]) {
+    for (const key of ["es", "en", "und", ...Object.keys(record)]) {
       if (!(key in record)) continue;
 
       const text = readableMetadata(record[key]);
@@ -183,16 +182,126 @@ function readableMetadata(value: unknown): string | null {
   return null;
 }
 
-export async function inspectEpub(
+const MAX_SECTION_CHARACTERS = 1_000_000;
+
+const TEXT_BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,blockquote,pre";
+
+const IGNORED_ELEMENTS = new Set([
+  "script",
+  "style",
+  "noscript",
+  "iframe",
+  "object",
+  "form",
+  "template",
+  "svg",
+  "head",
+]);
+
+function extractPlainText(element: Element): string {
+  const parts: string[] = [];
+
+  function visit(node: Node): void {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? "");
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const current = node as Element;
+    const name = current.localName.toLowerCase();
+
+    if (IGNORED_ELEMENTS.has(name)) {
+      return;
+    }
+
+    if (name === "br") {
+      parts.push("\n");
+      return;
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      visit(child);
+    }
+  }
+
+  visit(element);
+
+  return parts
+    .join("")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+}
+
+function extractSectionContent(parsed: Document): EpubSectionContent {
+  if (parsed.querySelector("parsererror")) {
+    throw new Error("La sección EPUB contiene un documento XML inválido.");
+  }
+
+  const root = parsed.querySelector("body") ?? parsed.documentElement;
+
+  if (!root) {
+    return { blocks: [] };
+  }
+
+  const elements = Array.from(root.querySelectorAll(TEXT_BLOCK_SELECTOR));
+
+  const blocks: EpubTextBlock[] = [];
+
+  let characterCount = 0;
+
+  for (const element of elements) {
+    // Prefer the innermost meaningful block to avoid
+    // duplicating text from nested paragraphs or lists.
+    if (element.querySelector(TEXT_BLOCK_SELECTOR)) {
+      continue;
+    }
+
+    const text = extractPlainText(element);
+
+    if (!text) continue;
+
+    characterCount += text.length;
+
+    if (characterCount > MAX_SECTION_CHARACTERS) {
+      throw new Error("La sección EPUB supera el límite de texto permitido.");
+    }
+
+    blocks.push({
+      kind: /^h[1-6]$/i.test(element.localName) ? "heading" : "paragraph",
+      text,
+    });
+  }
+
+  if (blocks.length === 0) {
+    const text = extractPlainText(root);
+
+    if (text.length > MAX_SECTION_CHARACTERS) {
+      throw new Error("La sección EPUB supera el límite de texto permitido.");
+    }
+
+    if (text) {
+      blocks.push({
+        kind: "paragraph",
+        text,
+      });
+    }
+  }
+
+  return { blocks };
+}
+
+export async function openEpub(
   file: FileHandle,
   size: number,
   fileName: string,
-): Promise<EpubSummary> {
-  if (
-    !Number.isSafeInteger(size) ||
-    size < 4 ||
-    size > MAX_EPUB_BYTES
-  ) {
+): Promise<EpubSession> {
+  if (!Number.isSafeInteger(size) || size < 4 || size > MAX_EPUB_BYTES) {
     throw new Error(
       "El EPUB tiene un tamaño inválido o supera el límite de 128 MiB.",
     );
@@ -200,38 +309,89 @@ export async function inspectEpub(
 
   const source = new NativeRangeSource(file, size);
 
-  const blob = new NativeFileBlob(
-    source,
-    0,
-    size,
-    fileName,
-  );
+  const blob = new NativeFileBlob(source, 0, size, fileName);
 
-  // Dynamically loaded: PDF users do not need the EPUB engine.
   const { makeBook } = await import("foliate-js/view.js");
 
-  const book = await makeBook(blob);
+  let book: Awaited<ReturnType<typeof makeBook>>;
 
-  if (
-    !Array.isArray(book.sections) ||
-    book.sections.length === 0
-  ) {
-    throw new Error(
-      "El EPUB no contiene secciones de lectura válidas.",
+  try {
+    book = await makeBook(blob);
+
+    if (!Array.isArray(book.sections) || book.sections.length === 0) {
+      throw new Error("El EPUB no contiene secciones de lectura válidas.");
+    }
+  } catch (cause) {
+    await source.waitForIdle();
+    throw cause;
+  }
+
+  const summary: EpubSummary = {
+    title: readableMetadata(book.metadata?.title) ?? "Libro sin título",
+    author: readableMetadata(book.metadata?.author) ?? "Autor desconocido",
+    sectionCount: book.sections.length,
+    tocCount: Array.isArray(book.toc) ? book.toc.length : 0,
+    fileName,
+  };
+
+  const readingTasks = new Set<Promise<EpubSectionContent>>();
+
+  let closePromise: Promise<void> | null = null;
+
+  function readSection(index: number): Promise<EpubSectionContent> {
+    if (closePromise) {
+      return Promise.reject(new Error("La sesión EPUB ya está cerrándose."));
+    }
+
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= book.sections.length
+    ) {
+      return Promise.reject(new Error("Sección EPUB fuera de rango."));
+    }
+
+    const task = Promise.resolve()
+      .then(() => book.sections[index].createDocument())
+      .then(extractSectionContent);
+
+    readingTasks.add(task);
+
+    void task.then(
+      () => readingTasks.delete(task),
+      () => readingTasks.delete(task),
     );
+
+    return task;
+  }
+
+  function close(): Promise<void> {
+    if (closePromise) {
+      return closePromise;
+    }
+
+    closePromise = (async () => {
+      // Do not release the file while a chapter is
+      // still requesting ZIP ranges.
+      await Promise.allSettled([...readingTasks]);
+
+      try {
+        book.destroy?.();
+      } finally {
+        try {
+          await source.waitForIdle();
+        } finally {
+          await file.close();
+        }
+      }
+    })();
+
+    return closePromise;
   }
 
   return {
-    title:
-      readableMetadata(book.metadata?.title) ??
-      "Libro sin título",
-    author:
-      readableMetadata(book.metadata?.author) ??
-      "Autor desconocido",
-    sectionCount: book.sections.length,
-    tocCount: Array.isArray(book.toc)
-      ? book.toc.length
-      : 0,
-    fileName,
+    summary,
+    readSection,
+    close,
   };
 }

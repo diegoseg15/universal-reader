@@ -1,13 +1,20 @@
 
 declare module "foliate-js/view.js" {
+  export interface FoliateSection {
+    id?: string;
+    createDocument(): Document | Promise<Document>;
+  }
+
   export interface FoliateBook {
     metadata?: {
       title?: unknown;
       author?: unknown;
     };
 
-    sections: unknown[];
+    sections: FoliateSection[];
     toc?: unknown[];
+
+    destroy?(): void;
   }
 
   export function makeBook(
