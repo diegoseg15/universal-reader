@@ -1,5 +1,7 @@
 import { SeekMode, type FileHandle } from "@tauri-apps/plugin-fs";
 
+import type { FoliateBook } from "foliate-js/view.js";
+
 export type EpubSummary = {
   title: string;
   author: string;
@@ -15,6 +17,7 @@ export type EpubTextBlock = {
 
 export type EpubSectionContent = {
   blocks: EpubTextBlock[];
+  recoveredFromHtml?: boolean;
 };
 
 export type EpubSession = {
@@ -239,7 +242,10 @@ function extractPlainText(element: Element): string {
 }
 
 function extractSectionContent(parsed: Document): EpubSectionContent {
-  if (parsed.querySelector("parsererror")) {
+  if (
+    parsed.contentType !== "text/html" &&
+    parsed.querySelector("parsererror")
+  ) {
     throw new Error("La sección EPUB contiene un documento XML inválido.");
   }
 
@@ -294,6 +300,65 @@ function extractSectionContent(parsed: Document): EpubSectionContent {
   }
 
   return { blocks };
+}
+
+const MAX_FALLBACK_SOURCE_CHARACTERS = 4_000_000;
+
+async function readBookSection(
+  book: FoliateBook,
+  index: number,
+): Promise<EpubSectionContent> {
+  const section = book.sections[index];
+
+  const parsed = await section.createDocument();
+
+  const xmlError =
+    parsed.contentType !== "text/html" &&
+    parsed.querySelector("parsererror") !== null;
+
+  if (!xmlError) {
+    return extractSectionContent(parsed);
+  }
+
+  if (!section.id) {
+    throw new Error("No se pudo identificar la sección EPUB.");
+  }
+
+  const source = await book.loadText(section.id);
+
+  if (
+    typeof source !== "string" ||
+    !source.trim() ||
+    source.length > MAX_FALLBACK_SOURCE_CHARACTERS
+  ) {
+    throw new Error(
+      "No se pudo recuperar el contenido textual de esta sección.",
+    );
+  }
+
+  // Recovery is limited to text extraction.
+  // The parsed HTML is never inserted into the app DOM.
+  const recoveredDocument = new DOMParser().parseFromString(
+    source,
+    "text/html",
+  );
+
+  const content = extractSectionContent(recoveredDocument);
+
+  if (content.blocks.length === 0) {
+    throw new Error(
+      "La sección contiene XHTML inválido y no fue posible recuperar texto.",
+    );
+  }
+
+  console.warn(
+    `EPUB: sección ${index + 1} con XHTML inválido; texto recuperado mediante HTML.`,
+  );
+
+  return {
+    ...content,
+    recoveredFromHtml: true,
+  };
 }
 
 export async function openEpub(
@@ -351,9 +416,7 @@ export async function openEpub(
       return Promise.reject(new Error("Sección EPUB fuera de rango."));
     }
 
-    const task = Promise.resolve()
-      .then(() => book.sections[index].createDocument())
-      .then(extractSectionContent);
+    const task = Promise.resolve().then(() => readBookSection(book, index));
 
     readingTasks.add(task);
 

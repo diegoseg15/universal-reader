@@ -1,10 +1,6 @@
-
 import { useEffect, useState } from "react";
 
-import type {
-  EpubSectionContent,
-  EpubSession,
-} from "./EpubSource";
+import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
 type EpubChapterProps = {
   session: EpubSession;
@@ -19,17 +15,11 @@ type ChapterResult = {
 };
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
-export function EpubChapter({
-  session,
-  sectionIndex,
-}: EpubChapterProps) {
-  const [result, setResult] =
-    useState<ChapterResult | null>(null);
+export function EpubChapter({ session, sectionIndex }: EpubChapterProps) {
+  const [result, setResult] = useState<ChapterResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,16 +53,11 @@ export function EpubChapter({
   }, [session, sectionIndex]);
 
   const isCurrent =
-    result?.session === session &&
-    result.index === sectionIndex;
+    result?.session === session && result.index === sectionIndex;
 
-  const content = isCurrent
-    ? result.content
-    : null;
+  const content = isCurrent ? result.content : null;
 
-  const error = isCurrent
-    ? result.error
-    : null;
+  const error = isCurrent ? result.error : null;
 
   return (
     <article
@@ -96,9 +81,7 @@ export function EpubChapter({
           borderBottom: "1px solid #e5e7eb",
         }}
       >
-        <p style={{ margin: 0, color: "#64748b" }}>
-          {session.summary.title}
-        </p>
+        <p style={{ margin: 0, color: "#64748b" }}>{session.summary.title}</p>
 
         <h1
           style={{
@@ -111,18 +94,32 @@ export function EpubChapter({
         </h1>
 
         <p style={{ margin: 0, color: "#64748b" }}>
-          {session.summary.author} ·{" "}
-          {sectionIndex + 1} de{" "}
+          {session.summary.author} · {sectionIndex + 1} de{" "}
           {session.summary.sectionCount}
         </p>
       </header>
 
+      {content?.recoveredFromHtml && (
+        <p
+          role="status"
+          style={{
+            color: "#854d0e",
+            background: "#fef3c7",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            lineHeight: 1.5,
+          }}
+        >
+          Este capítulo contiene XHTML irregular. Se ha recuperado una versión
+          de lectura textual; algunos elementos podrían no conservar su formato
+          original.
+        </p>
+      )}
+
       {!isCurrent ? (
         <p role="status">Cargando sección...</p>
       ) : error ? (
-        <p role="alert">
-          No se pudo leer esta sección: {error}
-        </p>
+        <p role="alert">No se pudo leer esta sección: {error}</p>
       ) : content?.blocks.length ? (
         <div>
           {content.blocks.map((block, index) =>
@@ -153,9 +150,8 @@ export function EpubChapter({
         </div>
       ) : (
         <p>
-          Esta sección no contiene texto extraíble.
-          Puede tratarse de una portada, una ilustración
-          o contenido que todavía no admite este modo
+          Esta sección no contiene texto extraíble. Puede tratarse de una
+          portada, una ilustración o contenido que todavía no admite este modo
           de lectura.
         </p>
       )}
