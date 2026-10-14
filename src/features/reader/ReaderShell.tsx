@@ -39,6 +39,9 @@ type ReaderShellProps = {
   chapterTitle?: string | null;
   bookAuthor?: string | null;
 
+  navigationCanPrevious?: boolean;
+  navigationCanNext?: boolean;
+
   onReturnHome: () => void;
 
   onSelectFile: () => void;
@@ -70,6 +73,8 @@ export function ReaderShell({
   chapterTitle,
   bookAuthor,
   onReturnHome,
+  navigationCanPrevious,
+  navigationCanNext,
   children,
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
@@ -297,7 +302,9 @@ export function ReaderShell({
       >
         <section
           ref={viewportRef}
-          key={`${documentKey ?? "empty"}-${pageNumber ?? 0}`}
+          key={`${documentKey ?? "empty"}-${
+            epubTools ? epubTools.sectionIndex : (pageNumber ?? 0)
+          }`}
           className="reader-viewport"
           aria-label="Contenido del documento"
         >
@@ -394,6 +401,8 @@ export function ReaderShell({
           onPrevious={onPrevious}
           onNext={onNext}
           onGoToPage={onGoToPage}
+          canPrevious={navigationCanPrevious}
+          canNext={navigationCanNext}
         />
       )}
     </main>

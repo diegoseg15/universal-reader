@@ -65,6 +65,18 @@ type PendingPDF = {
   failure: unknown;
 };
 
+type EpubPageInfo = {
+  sectionIndex: number;
+  pageIndex: number;
+  pageCount: number;
+};
+
+type EpubPageRequest = {
+  sectionIndex: number;
+  index: number | "last";
+  serial: number;
+};
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -86,6 +98,13 @@ function App() {
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
 
   const [epubSectionIndex, setEpubSectionIndex] = useState(0);
+
+  const [epubPageInfo, setEpubPageInfo] = useState<EpubPageInfo | null>(null);
+
+  const [epubPageRequest, setEpubPageRequest] =
+    useState<EpubPageRequest | null>(null);
+
+  const epubRequestSerialRef = useRef(0);
 
   const [epubAppearance, setEpubAppearance] =
     useState<EpubAppearance>(readEpubAppearance);
@@ -585,15 +604,82 @@ function App() {
       (epubSectionIndex === 0 ? "Portada" : `Sección ${epubSectionIndex + 1}`))
     : null;
 
+  const compactEpub = epub !== null && epubAppearance.pageSize === "compact";
+
+  const currentEpubPage =
+    epubPageInfo?.sectionIndex === epubSectionIndex ? epubPageInfo : null;
+
+  function requestEpubPage(sectionIndex: number, index: number | "last"): void {
+    epubRequestSerialRef.current += 1;
+
+    setEpubPageRequest({
+      sectionIndex,
+      index,
+      serial: epubRequestSerialRef.current,
+    });
+  }
+
+  function navigateCompactEpub(direction: -1 | 1): void {
+    if (!epub) return;
+
+    const current = currentEpubPage?.pageIndex ?? 0;
+    const count = currentEpubPage?.pageCount ?? 1;
+
+    const target = current + direction;
+
+    if (target >= 0 && target < count) {
+      requestEpubPage(epubSectionIndex, target);
+      return;
+    }
+
+    const nextSection = epubSectionIndex + direction;
+
+    if (nextSection < 0 || nextSection >= epub.sectionCount) {
+      return;
+    }
+
+    requestEpubPage(nextSection, direction === 1 ? 0 : "last");
+
+    setEpubSectionIndex(nextSection);
+  }
+
   return (
     <ReaderShell
       title="Universal Reader"
       loading={loading}
       error={error}
       documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
-      pageNumber={document ? pageNumber : epub ? epubSectionIndex + 1 : null}
-      pageCount={document?.numPages ?? epub?.sectionCount ?? null}
-      navigationUnit={document ? "página" : "sección"}
+      pageNumber={
+        document
+          ? pageNumber
+          : epub
+            ? compactEpub
+              ? (currentEpubPage?.pageIndex ?? 0) + 1
+              : epubSectionIndex + 1
+            : null
+      }
+      pageCount={
+        document
+          ? document.numPages
+          : epub
+            ? compactEpub
+              ? (currentEpubPage?.pageCount ?? 1)
+              : epub.sectionCount
+            : null
+      }
+      navigationUnit={document || compactEpub ? "página" : "sección"}
+      navigationCanPrevious={
+        compactEpub
+          ? epubSectionIndex > 0 || (currentEpubPage?.pageIndex ?? 0) > 0
+          : undefined
+      }
+      navigationCanNext={
+        compactEpub && epub
+          ? epubSectionIndex < epub.sectionCount - 1 ||
+            (currentEpubPage?.pageIndex ?? 0) <
+              (currentEpubPage?.pageCount ?? 1) - 1
+          : undefined
+      }
       onSelectFile={() => void selectDocument()}
       viewportRef={viewportRef}
       bookTitle={epub?.title ?? (document ? pdfFileName : null)}
@@ -601,6 +687,10 @@ function App() {
       bookAuthor={epub?.author ?? null}
       onReturnHome={() => void returnHome()}
       onPrevious={() => {
+        if (compactEpub) {
+          navigateCompactEpub(-1);
+          return;
+        }
         if (epub) {
           setEpubSectionIndex((current) => Math.max(0, current - 1));
           return;
@@ -611,6 +701,10 @@ function App() {
         setPageNumber((current) => Math.max(1, current - 1));
       }}
       onNext={() => {
+        if (compactEpub) {
+          navigateCompactEpub(1);
+          return;
+        }
         if (epub) {
           setEpubSectionIndex((current) =>
             Math.min(epub.sectionCount - 1, current + 1),
@@ -625,6 +719,16 @@ function App() {
         );
       }}
       onGoToPage={(target) => {
+        if (compactEpub) {
+          const count = currentEpubPage?.pageCount ?? 1;
+
+          requestEpubPage(
+            epubSectionIndex,
+            Math.max(0, Math.min(count - 1, target - 1)),
+          );
+
+          return;
+        }
         if (document) {
           zoomAnchorRef.current = null;
 
@@ -677,7 +781,10 @@ function App() {
           ? {
               toc: activeEpubRef.current.toc,
               sectionIndex: epubSectionIndex,
-              onNavigateSection: setEpubSectionIndex,
+              onNavigateSection: (index) => {
+                setEpubPageRequest(null);
+                setEpubSectionIndex(index);
+              },
               appearance: epubAppearance,
               onAppearanceChange: setEpubAppearance,
             }
@@ -702,6 +809,20 @@ function App() {
           sectionIndex={epubSectionIndex}
           appearance={epubAppearance}
           viewportRef={viewportRef}
+          pageRequest={epubPageRequest}
+          onPageInfo={(info) => {
+            setEpubPageInfo((previous) => {
+              if (
+                previous?.sectionIndex === info.sectionIndex &&
+                previous.pageIndex === info.pageIndex &&
+                previous.pageCount === info.pageCount
+              ) {
+                return previous;
+              }
+
+              return info;
+            });
+          }}
         />
       ) : null}
     </ReaderShell>

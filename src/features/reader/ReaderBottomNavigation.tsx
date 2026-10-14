@@ -7,6 +7,8 @@ type ReaderBottomNavigationProps = {
   loading: boolean;
   onPrevious: () => void;
   onNext: () => void;
+  canPrevious?: boolean;
+  canNext?: boolean;
   onGoToPage: (page: number) => void;
 };
 
@@ -28,6 +30,8 @@ export function ReaderBottomNavigation({
   loading,
   onPrevious,
   onNext,
+  canPrevious,
+  canNext,
   onGoToPage,
 }: ReaderBottomNavigationProps) {
   const [previewPage, setPreviewPage] = useState<number | null>(null);
@@ -76,7 +80,7 @@ export function ReaderBottomNavigation({
         aria-label={`${unit} anterior`}
         title={`${unit} anterior`}
         onClick={onPrevious}
-        disabled={loading || pageNumber <= 1}
+        disabled={loading || !(canPrevious ?? pageNumber > 1)}
       >
         <svg
           viewBox="0 0 24 24"
@@ -134,7 +138,7 @@ export function ReaderBottomNavigation({
         aria-label={`${unit} siguiente`}
         title={`${unit} siguiente`}
         onClick={onNext}
-        disabled={loading || pageNumber >= pageCount}
+        disabled={loading || !(canNext ?? pageNumber < pageCount)}
       >
         <svg
           viewBox="0 0 24 24"
