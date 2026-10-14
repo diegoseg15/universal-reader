@@ -449,7 +449,9 @@ export function ReaderTools({
           aria-labelledby="reader-tab-zoom"
           className="reader-tools__content"
         >
-          <h2 className="reader-tools__title">Escala del documento</h2>
+          <h2 className="reader-tools__title">
+            {epubTools ? "Tamaño de lectura" : "Escala del documento"}
+          </h2>
 
           <div
             className="reader-zoom"
@@ -470,7 +472,9 @@ export function ReaderTools({
 
             <output className="reader-zoom__value" aria-live="polite">
               {zoom.value === null
-                ? "Ajustado"
+                ? epubTools
+                  ? "100%"
+                  : "Ajustado"
                 : `${Math.round(zoom.value * 100)}%`}
             </output>
 
@@ -494,7 +498,7 @@ export function ReaderTools({
             aria-pressed={zoom.value === null}
             disabled={loading}
           >
-            Ajustar a la ventana
+            {epubTools ? "Restablecer tamaño (100%)" : "Ajustar a la ventana"}
           </button>
         </div>
       )}

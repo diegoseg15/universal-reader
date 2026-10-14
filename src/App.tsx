@@ -38,6 +38,7 @@ import {
 } from "./features/reader/pdf/PdfRangeSource";
 
 import {
+  DEFAULT_EPUB_APPEARANCE,
   readEpubAppearance,
   saveEpubAppearance,
   type EpubAppearance,
@@ -646,7 +647,40 @@ function App() {
                 changeZoom(Math.max(MIN_ZOOM, (zoom ?? 1) - ZOOM_STEP)),
               onFit: () => changeZoom(null),
             }
-          : undefined
+          : epub
+            ? {
+                value:
+                  epubAppearance.fontSize === DEFAULT_EPUB_APPEARANCE.fontSize
+                    ? null
+                    : epubAppearance.fontSize /
+                      DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                min: 16 / DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                max: 28 / DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                onIncrease: () => {
+                  setEpubAppearance((current) => ({
+                    ...current,
+                    fontSize: Math.min(28, current.fontSize + 1),
+                  }));
+                },
+
+                onDecrease: () => {
+                  setEpubAppearance((current) => ({
+                    ...current,
+                    fontSize: Math.max(16, current.fontSize - 1),
+                  }));
+                },
+
+                onFit: () => {
+                  setEpubAppearance((current) => ({
+                    ...current,
+                    fontSize: DEFAULT_EPUB_APPEARANCE.fontSize,
+                  }));
+                },
+              }
+            : undefined
       }
       search={
         document
