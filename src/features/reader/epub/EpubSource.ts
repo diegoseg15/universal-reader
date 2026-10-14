@@ -31,6 +31,7 @@ export type EpubTocEntry = {
 export type EpubSession = {
   summary: EpubSummary;
   toc: EpubTocEntry[];
+  progressId: string;
   readSection: (index: number) => Promise<EpubSectionContent>;
   close: () => Promise<void>;
 };
@@ -97,6 +98,35 @@ class NativeRangeSource {
   async waitForIdle(): Promise<void> {
     await this.queue;
   }
+}
+
+const FINGERPRINT_SAMPLE_BYTES = 64 * 1024;
+
+async function createEpubProgressId(
+  source: NativeRangeSource,
+): Promise<string> {
+  const prefixEnd = Math.min(source.size, FINGERPRINT_SAMPLE_BYTES);
+
+  const suffixStart = Math.max(
+    prefixEnd,
+    source.size - FINGERPRINT_SAMPLE_BYTES,
+  );
+
+  const prefix = await source.read(0, prefixEnd);
+  const suffix = await source.read(suffixStart, source.size);
+
+  const sampledBytes = new Uint8Array(4 + prefix.length + suffix.length);
+
+  new DataView(sampledBytes.buffer).setUint32(0, source.size, true);
+
+  sampledBytes.set(prefix, 4);
+  sampledBytes.set(suffix, 4 + prefix.length);
+
+  const digest = await crypto.subtle.digest("SHA-256", sampledBytes.buffer);
+
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function clampSliceIndex(index: number, size: number): number {
@@ -454,6 +484,8 @@ export async function openEpub(
 
   const source = new NativeRangeSource(file, size);
 
+  const progressId = await createEpubProgressId(source);
+
   const blob = new NativeFileBlob(source, 0, size, fileName);
 
   const { makeBook } = await import("foliate-js/view.js");
@@ -614,6 +646,7 @@ export async function openEpub(
   return {
     summary,
     toc,
+    progressId,
     readSection,
     close,
   };

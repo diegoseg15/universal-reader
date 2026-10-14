@@ -8,6 +8,8 @@ import {
 
 import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
+import { getEpubProgress, saveEpubProgress } from "./EpubProgress";
+
 type EpubChapterProps = {
   session: EpubSession;
   sectionIndex: number;
@@ -21,25 +23,6 @@ type ChapterResult = {
   content: EpubSectionContent | null;
   error: string | null;
 };
-
-/**
- * Reading progress per EPUB session and chapter.
- *
- * WeakMap avoids retaining a closed book solely
- * because its reading positions were cached.
- */
-const sectionProgress = new WeakMap<EpubSession, Map<number, number>>();
-
-function getSectionProgress(session: EpubSession): Map<number, number> {
-  let positions = sectionProgress.get(session);
-
-  if (!positions) {
-    positions = new Map<number, number>();
-    sectionProgress.set(session, positions);
-  }
-
-  return positions;
-}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -98,54 +81,103 @@ export function EpubChapter({
   const error = isCurrent ? result.error : null;
 
   useLayoutEffect(() => {
-    // Restore only after this section has loaded
-    // and React has rendered its content.
-    if (!isCurrent || !content) {
-      return;
-    }
+    if (!isCurrent || !content) return;
 
     const viewport = viewportRef.current;
 
-    if (!viewport) {
-      return;
-    }
+    if (!viewport) return;
 
-    const positions = getSectionProgress(session);
+    const progress = getEpubProgress(session);
 
-    const savedProgress = positions.get(sectionIndex) ?? 0;
+    const savedPosition = progress.positions.get(sectionIndex) ?? 0;
 
-    function savePosition(): void {
-      if (!viewport) return;
+    progress.lastSection = sectionIndex;
+    saveEpubProgress(session);
+
+    let saveTimer: number | null = null;
+    let restored = false;
+
+    function updatePosition(): void {
+      if (!restored) return;
 
       const maxScroll = Math.max(
         0,
         viewport.scrollHeight - viewport.clientHeight,
       );
 
-      const progress = maxScroll > 0 ? viewport.scrollTop / maxScroll : 0;
+      const percentage = maxScroll > 0 ? viewport.scrollTop / maxScroll : 0;
 
-      positions.set(sectionIndex, Math.max(0, Math.min(1, progress)));
+      progress.positions.set(
+        sectionIndex,
+        Math.max(0, Math.min(1, percentage)),
+      );
     }
 
-    // Wait until the new chapter has its final
-    // layout dimensions before restoring scroll.
+    function scheduleSave(): void {
+      updatePosition();
+
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+
+      saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        saveEpubProgress(session);
+      }, 750);
+    }
+
+    function flushProgress(): void {
+      if (!restored) return;
+
+      updatePosition();
+
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+
+      saveEpubProgress(session);
+    }
+
+    function onVisibilityChange(): void {
+      if (window.document.visibilityState === "hidden") {
+        flushProgress();
+      }
+    }
+
     const frame = requestAnimationFrame(() => {
       const maxScroll = Math.max(
         0,
         viewport.scrollHeight - viewport.clientHeight,
       );
 
-      viewport.scrollTop = savedProgress * maxScroll;
+      viewport.scrollTop = savedPosition * maxScroll;
+      restored = true;
 
-      // Attach after restoration to avoid saving
-      // the initial scroll position as progress.
-      viewport.addEventListener("scroll", savePosition, { passive: true });
+      viewport.addEventListener("scroll", scheduleSave, { passive: true });
     });
+
+    window.addEventListener("pagehide", flushProgress);
+
+    window.document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelAnimationFrame(frame);
 
-      viewport.removeEventListener("scroll", savePosition);
+      viewport.removeEventListener("scroll", scheduleSave);
+
+      window.removeEventListener("pagehide", flushProgress);
+
+      window.document.removeEventListener(
+        "visibilitychange",
+        onVisibilityChange,
+      );
+
+      flushProgress();
+
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
     };
   }, [session, sectionIndex, isCurrent, content, viewportRef]);
 

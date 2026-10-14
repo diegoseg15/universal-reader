@@ -30,6 +30,8 @@ import {
 
 import { EpubChapter } from "./features/reader/epub/EpubChapter";
 
+import { getEpubProgress } from "./features/reader/epub/EpubProgress";
+
 import {
   closePDF,
   LocalPDFTransport,
@@ -355,7 +357,9 @@ function App() {
 
         activeEpubRef.current = session;
 
-        setEpubSectionIndex(0);
+        const savedProgress = getEpubProgress(session);
+
+        setEpubSectionIndex(savedProgress.lastSection);
         setPageNumber(1);
         setZoom(null);
         setEpub(session.summary);
