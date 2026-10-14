@@ -12,6 +12,8 @@ import { getEpubProgress, saveEpubProgress } from "./EpubProgress";
 
 import type { EpubAppearance } from "./EpubAppearance";
 
+import { EpubRichText } from "./EpubRichText";
+
 type EpubPageInfo = {
   sectionIndex: number;
   pageIndex: number;
@@ -478,31 +480,7 @@ export function EpubChapter({
               : {}),
           }}
         >
-          {content.blocks.map((block, index) =>
-            block.kind === "heading" ? (
-              <h2
-                key={index}
-                style={{
-                  margin: "24px 0 12px",
-                  fontSize: "1.35em",
-                  lineHeight: 1.35,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {block.text}
-              </h2>
-            ) : (
-              <p
-                key={index}
-                style={{
-                  margin: "0 0 18px",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {block.text}
-              </p>
-            ),
-          )}
+          <EpubRichText blocks={content.blocks} />
         </div>
       ) : (
         <p>
