@@ -83,9 +83,11 @@ export function EpubChapter({
   useLayoutEffect(() => {
     if (!isCurrent || !content) return;
 
-    const viewport = viewportRef.current;
+    const currentViewport = viewportRef.current;
 
-    if (!viewport) return;
+    if (!currentViewport) return;
+
+    const viewport: HTMLElement = currentViewport;
 
     const progress = getEpubProgress(session);
 
