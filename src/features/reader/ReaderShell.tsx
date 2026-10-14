@@ -5,6 +5,7 @@ import {
   type ReaderSearchControls,
   type ReaderToolTab,
   type ReaderZoomControls,
+  type ReaderEpubTools,
 } from "./ReaderTools";
 
 import "./ReaderShell.css";
@@ -20,6 +21,8 @@ type ReaderShellProps = {
 
   zoom?: ReaderZoomControls;
   search?: ReaderSearchControls;
+
+  epubTools?: ReaderEpubTools;
 
   viewportRef?: Ref<HTMLElement>;
 
@@ -41,6 +44,7 @@ export function ReaderShell({
   pageCount,
   zoom,
   search,
+  epubTools,
   viewportRef,
   onSelectFile,
   onPrevious,
@@ -49,7 +53,9 @@ export function ReaderShell({
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
 
-  const hasTools = hasDocument && (zoom !== undefined || search !== undefined);
+  const hasTools =
+    hasDocument &&
+    (zoom !== undefined || search !== undefined || epubTools !== undefined);
 
   const [isMobile, setIsMobile] = useState(
     () => window.matchMedia(MOBILE_QUERY).matches,
@@ -317,6 +323,20 @@ export function ReaderShell({
               onTabChange={setActiveTab}
               searchInputRef={searchInputRef}
               loading={loading}
+              epubTools={
+                epubTools
+                  ? {
+                      ...epubTools,
+                      onNavigateSection: (index) => {
+                        epubTools.onNavigateSection(index);
+
+                        if (isMobile) {
+                          closeTools();
+                        }
+                      },
+                    }
+                  : undefined
+              }
             />
           </aside>
         )}

@@ -39,6 +39,12 @@ import {
   type ActivePDF,
 } from "./features/reader/pdf/PdfRangeSource";
 
+import {
+  readEpubAppearance,
+  saveEpubAppearance,
+  type EpubAppearance,
+} from "./features/reader/epub/EpubAppearance";
+
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const MIN_ZOOM = 0.5;
@@ -79,6 +85,13 @@ function App() {
   const [epub, setEpub] = useState<EpubSummary | null>(null);
 
   const [epubSectionIndex, setEpubSectionIndex] = useState(0);
+
+  const [epubAppearance, setEpubAppearance] =
+    useState<EpubAppearance>(readEpubAppearance);
+
+  useEffect(() => {
+    saveEpubAppearance(epubAppearance);
+  }, [epubAppearance]);
 
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -564,6 +577,17 @@ function App() {
             }
           : undefined
       }
+      epubTools={
+        epub && activeEpubRef.current
+          ? {
+              toc: activeEpubRef.current.toc,
+              sectionIndex: epubSectionIndex,
+              onNavigateSection: setEpubSectionIndex,
+              appearance: epubAppearance,
+              onAppearanceChange: setEpubAppearance,
+            }
+          : undefined
+      }
     >
       {document ? (
         <PdfCanvasPage
@@ -581,7 +605,7 @@ function App() {
         <EpubChapter
           session={activeEpubRef.current}
           sectionIndex={epubSectionIndex}
-          onNavigateSection={setEpubSectionIndex}
+          appearance={epubAppearance}
           viewportRef={viewportRef}
         />
       ) : null}

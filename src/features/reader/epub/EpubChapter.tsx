@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 
 import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
@@ -20,7 +14,7 @@ import {
 type EpubChapterProps = {
   session: EpubSession;
   sectionIndex: number;
-  onNavigateSection: (index: number) => void;
+  appearance: EpubAppearance;
   viewportRef: RefObject<HTMLElement | null>;
 };
 
@@ -38,15 +32,10 @@ function getErrorMessage(error: unknown): string {
 export function EpubChapter({
   session,
   sectionIndex,
-  onNavigateSection,
+  appearance,
   viewportRef,
 }: EpubChapterProps) {
   const [result, setResult] = useState<ChapterResult | null>(null);
-
-  const [appearance, setAppearance] =
-    useState<EpubAppearance>(readEpubAppearance);
-
-  const tocRef = useRef<HTMLDetailsElement>(null);
 
   const sectionTitle = session.toc.find(
     (entry) => entry.sectionIndex === sectionIndex,
@@ -82,10 +71,6 @@ export function EpubChapter({
       cancelled = true;
     };
   }, [session, sectionIndex]);
-
-  useEffect(() => {
-    saveEpubAppearance(appearance);
-  }, [appearance]);
 
   const isCurrent =
     result?.session === session && result.index === sectionIndex;
@@ -236,234 +221,6 @@ export function EpubChapter({
           {session.summary.sectionCount}
         </p>
       </header>
-
-      <details
-        style={{
-          marginBottom: "16px",
-          border: "1px solid #e5e7eb",
-          borderRadius: "8px",
-          overflow: "hidden",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: "14px",
-          lineHeight: 1.5,
-        }}
-      >
-        <summary
-          style={{
-            padding: "12px 16px",
-            cursor: "pointer",
-            fontWeight: 600,
-            background: "#f8fafc",
-          }}
-        >
-          Apariencia de lectura
-        </summary>
-
-        <div
-          style={{
-            display: "grid",
-            gap: "18px",
-            padding: "16px",
-          }}
-        >
-          <label
-            style={{
-              display: "grid",
-              gap: "8px",
-            }}
-          >
-            <span>Tamaño de texto: {appearance.fontSize} px</span>
-
-            <input
-              type="range"
-              min={16}
-              max={28}
-              step={1}
-              value={appearance.fontSize}
-              onChange={(event) => {
-                const fontSize = Number(event.currentTarget.value);
-
-                setAppearance((current) => ({
-                  ...current,
-                  fontSize,
-                }));
-              }}
-              style={{ width: "100%" }}
-            />
-          </label>
-
-          <label
-            style={{
-              display: "grid",
-              gap: "8px",
-            }}
-          >
-            <span>Tipografía</span>
-
-            <select
-              value={appearance.fontFamily}
-              onChange={(event) => {
-                const fontFamily = event.currentTarget.value;
-
-                if (fontFamily !== "serif" && fontFamily !== "sans") {
-                  return;
-                }
-
-                setAppearance((current) => ({
-                  ...current,
-                  fontFamily,
-                }));
-              }}
-              style={{
-                width: "100%",
-                padding: "10px",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                background: "#ffffff",
-                color: "#1f2937",
-                font: "inherit",
-              }}
-            >
-              <option value="serif">Con serifas</option>
-              <option value="sans">Sin serifas</option>
-            </select>
-          </label>
-
-          <label
-            style={{
-              display: "grid",
-              gap: "8px",
-            }}
-          >
-            <span>Interlineado: {appearance.lineHeight.toFixed(1)}</span>
-
-            <input
-              type="range"
-              min={1.4}
-              max={2.1}
-              step={0.1}
-              value={appearance.lineHeight}
-              onChange={(event) => {
-                const lineHeight = Number(
-                  Number(event.currentTarget.value).toFixed(1),
-                );
-
-                setAppearance((current) => ({
-                  ...current,
-                  lineHeight,
-                }));
-              }}
-              style={{ width: "100%" }}
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAppearance({ ...DEFAULT_EPUB_APPEARANCE });
-            }}
-            style={{
-              justifySelf: "start",
-              padding: "9px 14px",
-              border: "1px solid #cbd5e1",
-              borderRadius: "6px",
-              background: "#ffffff",
-              color: "#334155",
-              cursor: "pointer",
-              font: "inherit",
-            }}
-          >
-            Restablecer apariencia
-          </button>
-        </div>
-      </details>
-
-      {session.toc.length > 0 && (
-        <details
-          ref={tocRef}
-          style={{
-            marginBottom: "24px",
-            border: "1px solid #e5e7eb",
-            borderRadius: "8px",
-            overflow: "hidden",
-          }}
-        >
-          <summary
-            style={{
-              padding: "12px 16px",
-              cursor: "pointer",
-              fontWeight: 600,
-              background: "#f8fafc",
-            }}
-          >
-            Índice del libro
-          </summary>
-
-          <nav
-            aria-label="Índice de capítulos EPUB"
-            style={{
-              maxHeight: "320px",
-              overflowY: "auto",
-              padding: "8px",
-            }}
-          >
-            {session.toc.map((entry) => {
-              const target = entry.sectionIndex;
-              const isCurrent = target !== null && target === sectionIndex;
-
-              return (
-                <div
-                  key={entry.id}
-                  style={{
-                    paddingLeft: `${Math.min(entry.depth, 4) * 12}px`,
-                  }}
-                >
-                  {target === null ? (
-                    <span
-                      style={{
-                        display: "block",
-                        padding: "10px",
-                        color: "#64748b",
-                        fontWeight: 600,
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {entry.title}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-current={isCurrent ? "location" : undefined}
-                      onClick={() => {
-                        onNavigateSection(target);
-
-                        if (tocRef.current) {
-                          tocRef.current.open = false;
-                        }
-                      }}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "10px",
-                        border: 0,
-                        borderRadius: "6px",
-                        background: isCurrent ? "#e2e8f0" : "transparent",
-                        color: "#1f2937",
-                        font: "inherit",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {entry.title}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </nav>
-        </details>
-      )}
 
       {content?.recoveredFromHtml && (
         <p
