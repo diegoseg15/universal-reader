@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
@@ -6,6 +12,7 @@ type EpubChapterProps = {
   session: EpubSession;
   sectionIndex: number;
   onNavigateSection: (index: number) => void;
+  viewportRef: RefObject<HTMLElement | null>;
 };
 
 type ChapterResult = {
@@ -15,6 +22,25 @@ type ChapterResult = {
   error: string | null;
 };
 
+/**
+ * Reading progress per EPUB session and chapter.
+ *
+ * WeakMap avoids retaining a closed book solely
+ * because its reading positions were cached.
+ */
+const sectionProgress = new WeakMap<EpubSession, Map<number, number>>();
+
+function getSectionProgress(session: EpubSession): Map<number, number> {
+  let positions = sectionProgress.get(session);
+
+  if (!positions) {
+    positions = new Map<number, number>();
+    sectionProgress.set(session, positions);
+  }
+
+  return positions;
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -23,6 +49,7 @@ export function EpubChapter({
   session,
   sectionIndex,
   onNavigateSection,
+  viewportRef,
 }: EpubChapterProps) {
   const [result, setResult] = useState<ChapterResult | null>(null);
 
@@ -69,6 +96,58 @@ export function EpubChapter({
   const content = isCurrent ? result.content : null;
 
   const error = isCurrent ? result.error : null;
+
+  useLayoutEffect(() => {
+    // Restore only after this section has loaded
+    // and React has rendered its content.
+    if (!isCurrent || !content) {
+      return;
+    }
+
+    const viewport = viewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    const positions = getSectionProgress(session);
+
+    const savedProgress = positions.get(sectionIndex) ?? 0;
+
+    function savePosition(): void {
+      if (!viewport) return;
+
+      const maxScroll = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight,
+      );
+
+      const progress = maxScroll > 0 ? viewport.scrollTop / maxScroll : 0;
+
+      positions.set(sectionIndex, Math.max(0, Math.min(1, progress)));
+    }
+
+    // Wait until the new chapter has its final
+    // layout dimensions before restoring scroll.
+    const frame = requestAnimationFrame(() => {
+      const maxScroll = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight,
+      );
+
+      viewport.scrollTop = savedProgress * maxScroll;
+
+      // Attach after restoration to avoid saving
+      // the initial scroll position as progress.
+      viewport.addEventListener("scroll", savePosition, { passive: true });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+
+      viewport.removeEventListener("scroll", savePosition);
+    };
+  }, [session, sectionIndex, isCurrent, content, viewportRef]);
 
   return (
     <article

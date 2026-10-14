@@ -578,6 +578,7 @@ function App() {
           session={activeEpubRef.current}
           sectionIndex={epubSectionIndex}
           onNavigateSection={setEpubSectionIndex}
+          viewportRef={viewportRef}
         />
       ) : null}
     </ReaderShell>
