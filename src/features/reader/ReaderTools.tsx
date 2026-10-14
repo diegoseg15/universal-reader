@@ -208,58 +208,11 @@ export function ReaderTools({
               fontSize: "13px",
             }}
           >
-            <span>Formato de hoja</span>
-
-            <select
-              value={epubTools.appearance.pageSize}
-              onChange={(event) => {
-                const pageSize = event.currentTarget.value;
-
-                if (
-                  pageSize !== "compact" &&
-                  pageSize !== "standard" &&
-                  pageSize !== "wide"
-                ) {
-                  return;
-                }
-
-                epubTools.onAppearanceChange({
-                  ...epubTools.appearance,
-                  pageSize,
-                });
-              }}
-              style={{
-                width: "100%",
-                minHeight: "44px",
-                padding: "10px",
-                border: "1px solid var(--reader-border)",
-                borderRadius: "8px",
-                background: "var(--reader-surface)",
-                color: "var(--reader-text)",
-                font: "inherit",
-                fontSize: "13px",
-              }}
-            >
-              <option value="compact">Compacta</option>
-
-              <option value="standard">Estándar</option>
-
-              <option value="wide">Amplia</option>
-            </select>
-          </label>
-
-          <label
-            style={{
-              display: "grid",
-              gap: "10px",
-              fontSize: "13px",
-            }}
-          >
             <span>Tamaño de texto: {epubTools.appearance.fontSize} px</span>
 
             <input
               type="range"
-              min={16}
+              min={10}
               max={28}
               step={1}
               value={epubTools.appearance.fontSize}

@@ -19,7 +19,6 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { ReaderShell } from "./features/reader/ReaderShell";
 import { PdfCanvasPage } from "./features/reader/pdf/PdfCanvasPage";
-
 import { usePdfSearch } from "./features/reader/pdf/usePdfSearch";
 
 import {
@@ -29,7 +28,6 @@ import {
 } from "./features/reader/epub/EpubSource";
 
 import { EpubChapter } from "./features/reader/epub/EpubChapter";
-
 import { getEpubProgress } from "./features/reader/epub/EpubProgress";
 
 import {
@@ -65,18 +63,6 @@ type PendingPDF = {
   failure: unknown;
 };
 
-type EpubPageInfo = {
-  sectionIndex: number;
-  pageIndex: number;
-  pageCount: number;
-};
-
-type EpubPageRequest = {
-  sectionIndex: number;
-  index: number | "last";
-  serial: number;
-};
-
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -86,7 +72,6 @@ function destroyPendingTask(pending: PendingPDF): Promise<void> {
     return Promise.resolve();
   }
 
-  // Share the same destruction promise across callers.
   pending.destroyPromise ??= pending.task.destroy();
 
   return pending.destroyPromise;
@@ -94,17 +79,12 @@ function destroyPendingTask(pending: PendingPDF): Promise<void> {
 
 function App() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+
   const [epub, setEpub] = useState<EpubSummary | null>(null);
+
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
 
   const [epubSectionIndex, setEpubSectionIndex] = useState(0);
-
-  const [epubPageInfo, setEpubPageInfo] = useState<EpubPageInfo | null>(null);
-
-  const [epubPageRequest, setEpubPageRequest] =
-    useState<EpubPageRequest | null>(null);
-
-  const epubRequestSerialRef = useRef(0);
 
   const [epubAppearance, setEpubAppearance] =
     useState<EpubAppearance>(readEpubAppearance);
@@ -120,6 +100,7 @@ function App() {
 
   const viewportRef = useRef<HTMLElement | null>(null);
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+
   const lastCenteredMatchRef = useRef<string | null>(null);
 
   const pdfSearch = usePdfSearch(document, (page) => {
@@ -174,11 +155,9 @@ function App() {
 
       const matchCenterY = matchRect.top + matchRect.height / 2;
 
-      const deltaX = matchCenterX - viewportCenterX;
-      const deltaY = matchCenterY - viewportCenterY;
+      viewport.scrollLeft += matchCenterX - viewportCenterX;
 
-      viewport.scrollLeft += deltaX;
-      viewport.scrollTop += deltaY;
+      viewport.scrollTop += matchCenterY - viewportCenterY;
 
       lastCenteredMatchRef.current = activeMatchKey;
     },
@@ -189,6 +168,7 @@ function App() {
   const activeRef = useRef<ActivePDF | null>(null);
   const openingRef = useRef<PendingPDF | null>(null);
   const closingRef = useRef(false);
+
   const activeEpubRef = useRef<EpubSession | null>(null);
 
   useEffect(() => {
@@ -234,6 +214,7 @@ function App() {
 
     if (viewport && canvas) {
       const viewportRect = viewport.getBoundingClientRect();
+
       const canvasRect = canvas.getBoundingClientRect();
 
       if (canvasRect.width > 0 && canvasRect.height > 0) {
@@ -270,6 +251,7 @@ function App() {
     if (!viewport || !canvas) return;
 
     const viewportRect = viewport.getBoundingClientRect();
+
     const canvasRect = canvas.getBoundingClientRect();
 
     if (canvasRect.width <= 0 || canvasRect.height <= 0) {
@@ -289,7 +271,6 @@ function App() {
   }, []);
 
   async function selectDocument(): Promise<void> {
-    // The ref blocks re-entry before React updates state.
     if (openingRef.current || closingRef.current || !mountedRef.current) {
       return;
     }
@@ -317,18 +298,15 @@ function App() {
         ],
       });
 
-      // Cancelling the dialog preserves the current PDF.
+      // Cancelling the dialog preserves the current document.
       if (!selected || pending.cancelled) return;
 
       setLoading(true);
       setError(null);
-
       setEpub(null);
-
       setPdfFileName(null);
 
       pdfSearch.clearSearch();
-
       zoomAnchorRef.current = null;
 
       setDocument(null);
@@ -383,7 +361,7 @@ function App() {
 
         const session = await openEpub(file, size, fileName);
 
-        // The session now owns the native FileHandle.
+        // Ownership of the handle moves to EpubSession.
         pending.file = null;
 
         if (pending.cancelled) {
@@ -396,6 +374,7 @@ function App() {
         const savedProgress = getEpubProgress(session);
 
         setEpubSectionIndex(savedProgress.lastSection);
+
         setPageNumber(1);
         setZoom(null);
         setEpub(session.summary);
@@ -419,15 +398,12 @@ function App() {
           return readRange(file, begin, end);
         },
         (cause) => {
-          // Ignore failures from a cancelled/closed PDF.
           if (pending.cancelled || !mountedRef.current) {
             return;
           }
 
           const active = activeRef.current;
 
-          // The transport must still belong to the
-          // pending task or the currently active PDF.
           if (!pending.task && active?.transport !== transport) {
             return;
           }
@@ -478,14 +454,16 @@ function App() {
         transport,
       };
 
-      // Ownership has moved to activeRef.
+      // Ownership moves to activeRef.
       pending.file = null;
       pending.task = null;
       pending.transport = null;
 
       setPageNumber(1);
       setZoom(null);
+
       setPdfFileName(selected.split(/[\\/]/).pop() || "Documento PDF");
+
       setDocument(loadedDocument);
     } catch (cause) {
       if (!pending.cancelled && mountedRef.current) {
@@ -496,8 +474,6 @@ function App() {
         );
       }
     } finally {
-      // Cleanup owns any resources not promoted
-      // to activeRef.
       pending.transport?.abort();
 
       if (pending.task) {
@@ -520,7 +496,7 @@ function App() {
         try {
           await pending.file.close();
         } catch (cause) {
-          console.error("Error al cerrar archivo PDF:", cause);
+          console.error("Error al cerrar archivo pendiente:", cause);
         }
       }
 
@@ -604,82 +580,15 @@ function App() {
       (epubSectionIndex === 0 ? "Portada" : `Sección ${epubSectionIndex + 1}`))
     : null;
 
-  const compactEpub = epub !== null && epubAppearance.pageSize === "compact";
-
-  const currentEpubPage =
-    epubPageInfo?.sectionIndex === epubSectionIndex ? epubPageInfo : null;
-
-  function requestEpubPage(sectionIndex: number, index: number | "last"): void {
-    epubRequestSerialRef.current += 1;
-
-    setEpubPageRequest({
-      sectionIndex,
-      index,
-      serial: epubRequestSerialRef.current,
-    });
-  }
-
-  function navigateCompactEpub(direction: -1 | 1): void {
-    if (!epub) return;
-
-    const current = currentEpubPage?.pageIndex ?? 0;
-    const count = currentEpubPage?.pageCount ?? 1;
-
-    const target = current + direction;
-
-    if (target >= 0 && target < count) {
-      requestEpubPage(epubSectionIndex, target);
-      return;
-    }
-
-    const nextSection = epubSectionIndex + direction;
-
-    if (nextSection < 0 || nextSection >= epub.sectionCount) {
-      return;
-    }
-
-    requestEpubPage(nextSection, direction === 1 ? 0 : "last");
-
-    setEpubSectionIndex(nextSection);
-  }
-
   return (
     <ReaderShell
       title="Universal Reader"
       loading={loading}
       error={error}
       documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
-      pageNumber={
-        document
-          ? pageNumber
-          : epub
-            ? compactEpub
-              ? (currentEpubPage?.pageIndex ?? 0) + 1
-              : epubSectionIndex + 1
-            : null
-      }
-      pageCount={
-        document
-          ? document.numPages
-          : epub
-            ? compactEpub
-              ? (currentEpubPage?.pageCount ?? 1)
-              : epub.sectionCount
-            : null
-      }
-      navigationUnit={document || compactEpub ? "página" : "sección"}
-      navigationCanPrevious={
-        compactEpub
-          ? epubSectionIndex > 0 || (currentEpubPage?.pageIndex ?? 0) > 0
-          : undefined
-      }
-      navigationCanNext={
-        compactEpub && epub
-          ? epubSectionIndex < epub.sectionCount - 1 ||
-            (currentEpubPage?.pageIndex ?? 0) <
-              (currentEpubPage?.pageCount ?? 1) - 1
-          : undefined
-      }
+      pageNumber={document ? pageNumber : epub ? epubSectionIndex + 1 : null}
+      pageCount={document?.numPages ?? epub?.sectionCount ?? null}
+      navigationUnit={document ? "página" : "sección"}
       onSelectFile={() => void selectDocument()}
       viewportRef={viewportRef}
       bookTitle={epub?.title ?? (document ? pdfFileName : null)}
@@ -687,10 +596,6 @@ function App() {
       bookAuthor={epub?.author ?? null}
       onReturnHome={() => void returnHome()}
       onPrevious={() => {
-        if (compactEpub) {
-          navigateCompactEpub(-1);
-          return;
-        }
         if (epub) {
           setEpubSectionIndex((current) => Math.max(0, current - 1));
           return;
@@ -701,10 +606,6 @@ function App() {
         setPageNumber((current) => Math.max(1, current - 1));
       }}
       onNext={() => {
-        if (compactEpub) {
-          navigateCompactEpub(1);
-          return;
-        }
         if (epub) {
           setEpubSectionIndex((current) =>
             Math.min(epub.sectionCount - 1, current + 1),
@@ -719,16 +620,6 @@ function App() {
         );
       }}
       onGoToPage={(target) => {
-        if (compactEpub) {
-          const count = currentEpubPage?.pageCount ?? 1;
-
-          requestEpubPage(
-            epubSectionIndex,
-            Math.max(0, Math.min(count - 1, target - 1)),
-          );
-
-          return;
-        }
         if (document) {
           zoomAnchorRef.current = null;
 
@@ -763,12 +654,11 @@ function App() {
               query: pdfSearch.query,
               status: pdfSearch.status,
               scannedPages: pdfSearch.scannedPages,
-              totalPages: document?.numPages ?? 0,
+              totalPages: document.numPages,
               pagesWithMatches: pdfSearch.pages.length,
               totalMatches: pdfSearch.totalMatches,
               selectedIndex: pdfSearch.selectedIndex,
               error: pdfSearch.error,
-
               onQueryChange: pdfSearch.changeQuery,
               onSearch: pdfSearch.search,
               onPrevious: pdfSearch.previousResult,
@@ -781,10 +671,7 @@ function App() {
           ? {
               toc: activeEpubRef.current.toc,
               sectionIndex: epubSectionIndex,
-              onNavigateSection: (index) => {
-                setEpubPageRequest(null);
-                setEpubSectionIndex(index);
-              },
+              onNavigateSection: setEpubSectionIndex,
               appearance: epubAppearance,
               onAppearanceChange: setEpubAppearance,
             }
@@ -809,20 +696,6 @@ function App() {
           sectionIndex={epubSectionIndex}
           appearance={epubAppearance}
           viewportRef={viewportRef}
-          pageRequest={epubPageRequest}
-          onPageInfo={(info) => {
-            setEpubPageInfo((previous) => {
-              if (
-                previous?.sectionIndex === info.sectionIndex &&
-                previous.pageIndex === info.pageIndex &&
-                previous.pageCount === info.pageCount
-              ) {
-                return previous;
-              }
-
-              return info;
-            });
-          }}
         />
       ) : null}
     </ReaderShell>
