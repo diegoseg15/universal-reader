@@ -12,6 +12,10 @@ import "./ReaderShell.css";
 
 import { ReaderBottomNavigation } from "./ReaderBottomNavigation";
 
+import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/csr/SlidersHorizontal";
+import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
+import { CaretLeftIcon } from "@phosphor-icons/react";
+
 type ReaderShellProps = {
   title: string;
   loading: boolean;
@@ -30,6 +34,12 @@ type ReaderShellProps = {
 
   navigationUnit: "página" | "sección";
   onGoToPage: (page: number) => void;
+
+  bookTitle?: string | null;
+  chapterTitle?: string | null;
+  bookAuthor?: string | null;
+
+  onReturnHome: () => void;
 
   onSelectFile: () => void;
   onPrevious: () => void;
@@ -56,6 +66,10 @@ export function ReaderShell({
   onPrevious,
   onNext,
   onGoToPage,
+  bookTitle,
+  chapterTitle,
+  bookAuthor,
+  onReturnHome,
   children,
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
@@ -200,37 +214,71 @@ export function ReaderShell({
   return (
     <main className="reader-shell">
       <header className="reader-header">
-        <div className="reader-brand">
+        <div className="reader-header__identity">
+          {hasDocument && (
+            <button
+              type="button"
+              className="reader-header__icon"
+              aria-label="Volver al inicio"
+              title="Volver al inicio"
+              disabled={loading}
+              onClick={onReturnHome}
+            >
+              <CaretLeftIcon size={22} weight="regular" aria-hidden="true" />
+            </button>
+          )}
+
           <span className="reader-brand__name">{title}</span>
-          <span className="reader-brand__subtitle">Lector digital</span>
         </div>
 
-        <button
-          type="button"
-          className="reader-button reader-button--primary"
-          onClick={onSelectFile}
-          disabled={loading}
-        >
-          {loading ? "Abriendo..." : "Abrir documento"}
-        </button>
-      </header>
+        {hasDocument && (
+          <div
+            className="reader-header__metadata"
+            aria-label="Documento actual"
+          >
+            <span
+              className="reader-header__document-title"
+              title={bookTitle ?? undefined}
+            >
+              {bookTitle ?? "Documento"}
+            </span>
 
-      {hasTools && (
-        <div className="reader-toolbar reader-toolbar--tools">
+            {chapterTitle && (
+              <strong
+                className="reader-header__chapter-title"
+                title={chapterTitle}
+              >
+                {chapterTitle}
+              </strong>
+            )}
+
+            {bookAuthor && (
+              <span className="reader-header__author">{bookAuthor}</span>
+            )}
+          </div>
+        )}
+
+        {hasTools && (
           <button
             ref={toolsTriggerRef}
             type="button"
-            className="reader-button"
+            className="reader-header__icon"
+            aria-label={
+              toolsOpen ? "Ocultar herramientas" : "Mostrar herramientas"
+            }
+            title="Herramientas de lectura"
             aria-expanded={toolsOpen}
             aria-controls="reader-tools-panel"
-            onClick={() => {
-              setToolsOpen((current) => !current);
-            }}
+            onClick={() => setToolsOpen((open) => !open)}
           >
-            {toolsOpen ? "Ocultar herramientas" : "Herramientas"}
+            <SlidersHorizontalIcon
+              size={23}
+              weight="regular"
+              aria-hidden="true"
+            />
           </button>
-        </div>
-      )}
+        )}
+      </header>
 
       {error && (
         <p className="reader-error" role="alert">
@@ -258,7 +306,18 @@ export function ReaderShell({
           ) : (
             <div className="reader-empty">
               <h1>Tu próxima lectura comienza aquí</h1>
-              <p>Selecciona un documento PDF o EPUB para comenzar.</p>
+
+              <p>Abre un documento PDF o EPUB y continúa leyendo a tu ritmo.</p>
+
+              <button
+                type="button"
+                className="reader-button reader-button--primary reader-empty__open"
+                onClick={onSelectFile}
+                disabled={loading}
+              >
+                <FolderOpenIcon size={22} weight="regular" aria-hidden="true" />
+                Abrir documento
+              </button>
             </div>
           )}
         </section>

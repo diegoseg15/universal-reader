@@ -4,12 +4,7 @@ import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
 import { getEpubProgress, saveEpubProgress } from "./EpubProgress";
 
-import {
-  DEFAULT_EPUB_APPEARANCE,
-  readEpubAppearance,
-  saveEpubAppearance,
-  type EpubAppearance,
-} from "./EpubAppearance";
+import type { EpubAppearance } from "./EpubAppearance";
 
 type EpubChapterProps = {
   session: EpubSession;
@@ -36,10 +31,6 @@ export function EpubChapter({
   viewportRef,
 }: EpubChapterProps) {
   const [result, setResult] = useState<ChapterResult | null>(null);
-
-  const sectionTitle = session.toc.find(
-    (entry) => entry.sectionIndex === sectionIndex,
-  )?.title;
 
   useEffect(() => {
     let cancelled = false;
@@ -197,31 +188,6 @@ export function EpubChapter({
         overflowWrap: "anywhere",
       }}
     >
-      <header
-        style={{
-          marginBottom: "28px",
-          paddingBottom: "20px",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
-        <p style={{ margin: 0, color: "#64748b" }}>{session.summary.title}</p>
-
-        <h1
-          style={{
-            margin: "8px 0",
-            fontSize: "clamp(22px, 4vw, 30px)",
-            lineHeight: 1.25,
-          }}
-        >
-          {sectionTitle ?? `Sección ${sectionIndex + 1}`}
-        </h1>
-
-        <p style={{ margin: 0, color: "#64748b" }}>
-          {session.summary.author} · {sectionIndex + 1} de{" "}
-          {session.summary.sectionCount}
-        </p>
-      </header>
-
       {content?.recoveredFromHtml && (
         <p
           role="status"

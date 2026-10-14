@@ -83,6 +83,7 @@ function destroyPendingTask(pending: PendingPDF): Promise<void> {
 function App() {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [epub, setEpub] = useState<EpubSummary | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
 
   const [epubSectionIndex, setEpubSectionIndex] = useState(0);
 
@@ -168,6 +169,7 @@ function App() {
   const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
   const openingRef = useRef<PendingPDF | null>(null);
+  const closingRef = useRef(false);
   const activeEpubRef = useRef<EpubSession | null>(null);
 
   useEffect(() => {
@@ -269,7 +271,7 @@ function App() {
 
   async function selectDocument(): Promise<void> {
     // The ref blocks re-entry before React updates state.
-    if (openingRef.current || !mountedRef.current) {
+    if (openingRef.current || closingRef.current || !mountedRef.current) {
       return;
     }
 
@@ -303,6 +305,8 @@ function App() {
       setError(null);
 
       setEpub(null);
+
+      setPdfFileName(null);
 
       pdfSearch.clearSearch();
 
@@ -462,6 +466,7 @@ function App() {
 
       setPageNumber(1);
       setZoom(null);
+      setPdfFileName(selected.split(/[\\/]/).pop() || "Documento PDF");
       setDocument(loadedDocument);
     } catch (cause) {
       if (!pending.cancelled && mountedRef.current) {
@@ -510,6 +515,76 @@ function App() {
     }
   }
 
+  async function returnHome(): Promise<void> {
+    if (openingRef.current || closingRef.current || !mountedRef.current) {
+      return;
+    }
+
+    closingRef.current = true;
+    setLoading(true);
+
+    const previousPdf = activeRef.current;
+    const previousEpub = activeEpubRef.current;
+
+    activeRef.current = null;
+    activeEpubRef.current = null;
+
+    setDocument(null);
+    setEpub(null);
+    setPdfFileName(null);
+    setError(null);
+
+    pdfSearch.clearSearch();
+
+    zoomAnchorRef.current = null;
+    lastCenteredMatchRef.current = null;
+
+    setZoom(null);
+    setPageNumber(1);
+    setEpubSectionIndex(0);
+
+    try {
+      const closures: Promise<void>[] = [];
+
+      if (previousPdf) {
+        closures.push(closePDF(previousPdf));
+      }
+
+      if (previousEpub) {
+        closures.push(previousEpub.close());
+      }
+
+      const results = await Promise.allSettled(closures);
+
+      const failure = results.find((result) => result.status === "rejected");
+
+      if (failure?.status === "rejected") {
+        console.error("Error al cerrar el documento:", failure.reason);
+
+        if (mountedRef.current) {
+          setError(
+            `No se pudo cerrar el documento correctamente: ${getErrorMessage(
+              failure.reason,
+            )}`,
+          );
+        }
+      }
+    } finally {
+      closingRef.current = false;
+
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }
+
+  const currentChapterTitle = epub
+    ? (activeEpubRef.current?.toc.find(
+        (entry) => entry.sectionIndex === epubSectionIndex,
+      )?.title ??
+      (epubSectionIndex === 0 ? "Portada" : `Sección ${epubSectionIndex + 1}`))
+    : null;
+
   return (
     <ReaderShell
       title="Universal Reader"
@@ -521,6 +596,10 @@ function App() {
       navigationUnit={document ? "página" : "sección"}
       onSelectFile={() => void selectDocument()}
       viewportRef={viewportRef}
+      bookTitle={epub?.title ?? (document ? pdfFileName : null)}
+      chapterTitle={currentChapterTitle}
+      bookAuthor={epub?.author ?? null}
+      onReturnHome={() => void returnHome()}
       onPrevious={() => {
         if (epub) {
           setEpubSectionIndex((current) => Math.max(0, current - 1));
