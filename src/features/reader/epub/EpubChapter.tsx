@@ -34,7 +34,7 @@ type EpubChapterProps = {
 };
 
 type SheetProfile = {
-  maxWidth: number;
+  maxWidth: number | null;
   minHeight: number;
   minPadding: number;
   maxPadding: number;
@@ -43,21 +43,21 @@ type SheetProfile = {
 const EPUB_SHEET_PROFILES: Record<EpubAppearance["pageSize"], SheetProfile> = {
   compact: {
     maxWidth: 540,
-    minHeight: 680,
+    minHeight: 0,
     minPadding: 12,
-    maxPadding: 32,
+    maxPadding: 28,
   },
   standard: {
-    maxWidth: 720,
+    maxWidth: 880,
     minHeight: 820,
     minPadding: 18,
     maxPadding: 48,
   },
   wide: {
-    maxWidth: 880,
-    minHeight: 920,
-    minPadding: 24,
-    maxPadding: 64,
+    maxWidth: null,
+    minHeight: 0,
+    minPadding: 16,
+    maxPadding: 48,
   },
 };
 
@@ -377,7 +377,8 @@ export function EpubChapter({
         display: isCompact ? "flex" : "block",
         flexDirection: isCompact ? "column" : undefined,
 
-        width: `min(100%, ${sheet.maxWidth}px)`,
+        width:
+          sheet.maxWidth === null ? "100%" : `min(100%, ${sheet.maxWidth}px)`,
 
         height: isCompact ? "100%" : undefined,
         minHeight: isCompact

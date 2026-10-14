@@ -2,12 +2,14 @@ export type EpubAppearance = {
   fontSize: number;
   lineHeight: number;
   fontFamily: "serif" | "sans";
+  pageSize: "compact" | "standard" | "wide";
 };
 
 export const DEFAULT_EPUB_APPEARANCE: EpubAppearance = {
-  fontSize: 19,
+  fontSize: 16,
   lineHeight: 1.7,
   fontFamily: "serif",
+  pageSize: "compact",
 };
 
 const STORAGE_KEY = "universal-reader:epub-appearance:v1";
@@ -53,10 +55,18 @@ export function readEpubAppearance(): EpubAppearance {
         ? value.fontFamily
         : DEFAULT_EPUB_APPEARANCE.fontFamily;
 
+    const pageSize: EpubAppearance["pageSize"] =
+      value.pageSize === "compact" ||
+      value.pageSize === "standard" ||
+      value.pageSize === "wide"
+        ? value.pageSize
+        : DEFAULT_EPUB_APPEARANCE.pageSize;
+
     return {
       fontSize,
       lineHeight,
       fontFamily,
+      pageSize,
     };
   } catch (error) {
     console.warn("No se pudieron recuperar las preferencias EPUB:", error);
