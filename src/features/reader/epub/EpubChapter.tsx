@@ -10,6 +10,13 @@ import type { EpubSectionContent, EpubSession } from "./EpubSource";
 
 import { getEpubProgress, saveEpubProgress } from "./EpubProgress";
 
+import {
+  DEFAULT_EPUB_APPEARANCE,
+  readEpubAppearance,
+  saveEpubAppearance,
+  type EpubAppearance,
+} from "./EpubAppearance";
+
 type EpubChapterProps = {
   session: EpubSession;
   sectionIndex: number;
@@ -35,6 +42,9 @@ export function EpubChapter({
   viewportRef,
 }: EpubChapterProps) {
   const [result, setResult] = useState<ChapterResult | null>(null);
+
+  const [appearance, setAppearance] =
+    useState<EpubAppearance>(readEpubAppearance);
 
   const tocRef = useRef<HTMLDetailsElement>(null);
 
@@ -72,6 +82,10 @@ export function EpubChapter({
       cancelled = true;
     };
   }, [session, sectionIndex]);
+
+  useEffect(() => {
+    saveEpubAppearance(appearance);
+  }, [appearance]);
 
   const isCurrent =
     result?.session === session && result.index === sectionIndex;
@@ -223,6 +237,147 @@ export function EpubChapter({
         </p>
       </header>
 
+      <details
+        style={{
+          marginBottom: "16px",
+          border: "1px solid #e5e7eb",
+          borderRadius: "8px",
+          overflow: "hidden",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "14px",
+          lineHeight: 1.5,
+        }}
+      >
+        <summary
+          style={{
+            padding: "12px 16px",
+            cursor: "pointer",
+            fontWeight: 600,
+            background: "#f8fafc",
+          }}
+        >
+          Apariencia de lectura
+        </summary>
+
+        <div
+          style={{
+            display: "grid",
+            gap: "18px",
+            padding: "16px",
+          }}
+        >
+          <label
+            style={{
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <span>Tamaño de texto: {appearance.fontSize} px</span>
+
+            <input
+              type="range"
+              min={16}
+              max={28}
+              step={1}
+              value={appearance.fontSize}
+              onChange={(event) => {
+                const fontSize = Number(event.currentTarget.value);
+
+                setAppearance((current) => ({
+                  ...current,
+                  fontSize,
+                }));
+              }}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <span>Tipografía</span>
+
+            <select
+              value={appearance.fontFamily}
+              onChange={(event) => {
+                const fontFamily = event.currentTarget.value;
+
+                if (fontFamily !== "serif" && fontFamily !== "sans") {
+                  return;
+                }
+
+                setAppearance((current) => ({
+                  ...current,
+                  fontFamily,
+                }));
+              }}
+              style={{
+                width: "100%",
+                padding: "10px",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                background: "#ffffff",
+                color: "#1f2937",
+                font: "inherit",
+              }}
+            >
+              <option value="serif">Con serifas</option>
+              <option value="sans">Sin serifas</option>
+            </select>
+          </label>
+
+          <label
+            style={{
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <span>Interlineado: {appearance.lineHeight.toFixed(1)}</span>
+
+            <input
+              type="range"
+              min={1.4}
+              max={2.1}
+              step={0.1}
+              value={appearance.lineHeight}
+              onChange={(event) => {
+                const lineHeight = Number(
+                  Number(event.currentTarget.value).toFixed(1),
+                );
+
+                setAppearance((current) => ({
+                  ...current,
+                  lineHeight,
+                }));
+              }}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAppearance({ ...DEFAULT_EPUB_APPEARANCE });
+            }}
+            style={{
+              justifySelf: "start",
+              padding: "9px 14px",
+              border: "1px solid #cbd5e1",
+              borderRadius: "6px",
+              background: "#ffffff",
+              color: "#334155",
+              cursor: "pointer",
+              font: "inherit",
+            }}
+          >
+            Restablecer apariencia
+          </button>
+        </div>
+      </details>
+
       {session.toc.length > 0 && (
         <details
           ref={tocRef}
@@ -354,14 +509,23 @@ export function EpubChapter({
           />
         </figure>
       ) : content?.blocks.length ? (
-        <div>
+        <div
+          style={{
+            fontFamily:
+              appearance.fontFamily === "serif"
+                ? 'Georgia, "Times New Roman", serif'
+                : 'system-ui, -apple-system, "Segoe UI", sans-serif',
+            fontSize: `${appearance.fontSize}px`,
+            lineHeight: appearance.lineHeight,
+          }}
+        >
           {content.blocks.map((block, index) =>
             block.kind === "heading" ? (
               <h2
                 key={index}
                 style={{
                   margin: "24px 0 12px",
-                  fontSize: "1.35rem",
+                  fontSize: "1.35em",
                   lineHeight: 1.35,
                   whiteSpace: "pre-wrap",
                 }}
