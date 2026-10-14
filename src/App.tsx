@@ -518,6 +518,7 @@ function App() {
       documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
       pageNumber={document ? pageNumber : epub ? epubSectionIndex + 1 : null}
       pageCount={document?.numPages ?? epub?.sectionCount ?? null}
+      navigationUnit={document ? "página" : "sección"}
       onSelectFile={() => void selectDocument()}
       viewportRef={viewportRef}
       onPrevious={() => {
@@ -543,6 +544,21 @@ function App() {
         setPageNumber((current) =>
           Math.min(document?.numPages ?? current, current + 1),
         );
+      }}
+      onGoToPage={(target) => {
+        if (document) {
+          zoomAnchorRef.current = null;
+
+          setPageNumber(Math.max(1, Math.min(document.numPages, target)));
+
+          return;
+        }
+
+        if (epub) {
+          setEpubSectionIndex(
+            Math.max(0, Math.min(epub.sectionCount - 1, target - 1)),
+          );
+        }
       }}
       zoom={
         document

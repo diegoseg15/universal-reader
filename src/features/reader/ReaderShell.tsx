@@ -10,6 +10,8 @@ import {
 
 import "./ReaderShell.css";
 
+import { ReaderBottomNavigation } from "./ReaderBottomNavigation";
+
 type ReaderShellProps = {
   title: string;
   loading: boolean;
@@ -25,6 +27,9 @@ type ReaderShellProps = {
   epubTools?: ReaderEpubTools;
 
   viewportRef?: Ref<HTMLElement>;
+
+  navigationUnit: "página" | "sección";
+  onGoToPage: (page: number) => void;
 
   onSelectFile: () => void;
   onPrevious: () => void;
@@ -42,6 +47,7 @@ export function ReaderShell({
   documentKey,
   pageNumber,
   pageCount,
+  navigationUnit,
   zoom,
   search,
   epubTools,
@@ -49,6 +55,7 @@ export function ReaderShell({
   onSelectFile,
   onPrevious,
   onNext,
+  onGoToPage,
   children,
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
@@ -208,46 +215,20 @@ export function ReaderShell({
         </button>
       </header>
 
-      {hasDocument && (
-        <div className="reader-toolbar">
-          <nav className="reader-navigation" aria-label="Navegación de lectura">
-            <button
-              type="button"
-              className="reader-button"
-              onClick={onPrevious}
-              disabled={pageNumber <= 1 || loading}
-            >
-              Anterior
-            </button>
-
-            <span className="reader-navigation__progress" aria-live="polite">
-              {pageNumber} / {pageCount}
-            </span>
-
-            <button
-              type="button"
-              className="reader-button"
-              onClick={onNext}
-              disabled={pageNumber >= pageCount || loading}
-            >
-              Siguiente
-            </button>
-          </nav>
-
-          {hasTools && (
-            <button
-              ref={toolsTriggerRef}
-              type="button"
-              className="reader-button"
-              aria-expanded={toolsOpen}
-              aria-controls="reader-tools-panel"
-              onClick={() => {
-                setToolsOpen((current) => !current);
-              }}
-            >
-              {toolsOpen ? "Ocultar herramientas" : "Herramientas"}
-            </button>
-          )}
+      {hasTools && (
+        <div className="reader-toolbar reader-toolbar--tools">
+          <button
+            ref={toolsTriggerRef}
+            type="button"
+            className="reader-button"
+            aria-expanded={toolsOpen}
+            aria-controls="reader-tools-panel"
+            onClick={() => {
+              setToolsOpen((current) => !current);
+            }}
+          >
+            {toolsOpen ? "Ocultar herramientas" : "Herramientas"}
+          </button>
         </div>
       )}
 
@@ -341,6 +322,19 @@ export function ReaderShell({
           </aside>
         )}
       </div>
+
+      {pageNumber !== null && pageCount !== null && (
+        <ReaderBottomNavigation
+          key={documentKey ?? "document"}
+          pageNumber={pageNumber}
+          pageCount={pageCount}
+          unit={navigationUnit}
+          loading={loading}
+          onPrevious={onPrevious}
+          onNext={onNext}
+          onGoToPage={onGoToPage}
+        />
+      )}
     </main>
   );
 }
