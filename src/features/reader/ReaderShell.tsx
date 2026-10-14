@@ -215,20 +215,22 @@ export function ReaderShell({
     <main className="reader-shell">
       <header className="reader-header">
         <div className="reader-header__identity">
-          {hasDocument && (
+          {hasDocument ? (
             <button
               type="button"
-              className="reader-header__icon"
+              className="reader-header__home"
+              onClick={onReturnHome}
+              disabled={loading}
               aria-label="Volver al inicio"
               title="Volver al inicio"
-              disabled={loading}
-              onClick={onReturnHome}
             >
               <CaretLeftIcon size={22} weight="regular" aria-hidden="true" />
-            </button>
-          )}
 
-          <span className="reader-brand__name">{title}</span>
+              <span className="reader-brand__name">{title}</span>
+            </button>
+          ) : (
+            <span className="reader-brand__name">{title}</span>
+          )}
         </div>
 
         {hasDocument && (
