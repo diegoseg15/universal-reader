@@ -1,32 +1,13 @@
-import { useEffect, useRef, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
+
+import {
+  ReaderTools,
+  type ReaderSearchControls,
+  type ReaderToolTab,
+  type ReaderZoomControls,
+} from "./ReaderTools";
+
 import "./ReaderShell.css";
-
-type ReaderZoomControls = {
-  value: number | null;
-  min: number;
-  max: number;
-  onIncrease: () => void;
-  onDecrease: () => void;
-  onFit: () => void;
-};
-
-type ReaderSearchControls = {
-  query: string;
-  status: "idle" | "searching" | "done" | "error";
-
-  scannedPages: number;
-  totalPages: number;
-  pagesWithMatches: number;
-  totalMatches: number;
-  selectedIndex: number;
-
-  error: string | null;
-
-  onQueryChange: (value: string) => void;
-  onSearch: () => void;
-  onPrevious: () => void;
-  onNext: () => void;
-};
 
 type ReaderShellProps = {
   title: string;
@@ -38,7 +19,6 @@ type ReaderShellProps = {
   pageCount: number | null;
 
   zoom?: ReaderZoomControls;
-
   search?: ReaderSearchControls;
 
   viewportRef?: Ref<HTMLElement>;
@@ -49,6 +29,8 @@ type ReaderShellProps = {
 
   children: ReactNode;
 };
+
+const MOBILE_QUERY = "(max-width: 800px)";
 
 export function ReaderShell({
   title,
@@ -67,9 +49,38 @@ export function ReaderShell({
 }: ReaderShellProps) {
   const hasDocument = pageNumber !== null && pageCount !== null;
 
+  const hasTools = hasDocument && (zoom !== undefined || search !== undefined);
+
+  const [isMobile, setIsMobile] = useState(
+    () => window.matchMedia(MOBILE_QUERY).matches,
+  );
+
+  const [toolsOpen, setToolsOpen] = useState(
+    () => !window.matchMedia(MOBILE_QUERY).matches,
+  );
+
+  const [activeTab, setActiveTab] = useState<ReaderToolTab>("search");
+
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const toolsPanelRef = useRef<HTMLElement>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const searchAvailable = hasDocument && search !== undefined && !loading;
+
+  useEffect(() => {
+    const media = window.matchMedia(MOBILE_QUERY);
+
+    function handleChange(): void {
+      setIsMobile(media.matches);
+      setToolsOpen(!media.matches);
+    }
+
+    media.addEventListener("change", handleChange);
+
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!searchAvailable) return;
@@ -88,10 +99,13 @@ export function ReaderShell({
 
       event.preventDefault();
 
-      const input = searchInputRef.current;
+      setActiveTab("search");
+      setToolsOpen(true);
 
-      input?.focus();
-      input?.select();
+      requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      });
     }
 
     window.addEventListener("keydown", handleSearchShortcut, true);
@@ -100,6 +114,73 @@ export function ReaderShell({
       window.removeEventListener("keydown", handleSearchShortcut, true);
     };
   }, [searchAvailable]);
+
+  useEffect(() => {
+    if (!toolsOpen || !hasTools || !isMobile) return;
+
+    const panel = toolsPanelRef.current;
+
+    if (!panel) return;
+
+    panel
+      .querySelector<HTMLButtonElement>("[data-reader-tools-close]")
+      ?.focus();
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.defaultPrevented) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setToolsOpen(false);
+        toolsTriggerRef.current?.focus();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (
+        event.shiftKey &&
+        (document.activeElement === first ||
+          !panel.contains(document.activeElement))
+      ) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last ||
+          !panel.contains(document.activeElement))
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [toolsOpen, hasTools, isMobile]);
+
+  function closeTools(): void {
+    setToolsOpen(false);
+    toolsTriggerRef.current?.focus();
+  }
 
   return (
     <main className="reader-shell">
@@ -145,175 +226,21 @@ export function ReaderShell({
             </button>
           </nav>
 
-          {zoom && (
-            <div
-              className="reader-zoom"
-              role="group"
-              aria-label="Zoom del documento"
+          {hasTools && (
+            <button
+              ref={toolsTriggerRef}
+              type="button"
+              className="reader-button"
+              aria-expanded={toolsOpen}
+              aria-controls="reader-tools-panel"
+              onClick={() => {
+                setToolsOpen((current) => !current);
+              }}
             >
-              <button
-                type="button"
-                className="reader-button reader-button--icon"
-                aria-label="Reducir zoom"
-                onClick={zoom.onDecrease}
-                disabled={
-                  loading || (zoom.value !== null && zoom.value <= zoom.min)
-                }
-              >
-                −
-              </button>
-
-              <output className="reader-zoom__value" aria-live="polite">
-                {zoom.value === null
-                  ? "Ajustado"
-                  : `${Math.round(zoom.value * 100)}%`}
-              </output>
-
-              <button
-                type="button"
-                className="reader-button reader-button--icon"
-                aria-label="Ampliar zoom"
-                onClick={zoom.onIncrease}
-                disabled={
-                  loading || (zoom.value !== null && zoom.value >= zoom.max)
-                }
-              >
-                +
-              </button>
-
-              <button
-                type="button"
-                className="reader-button"
-                onClick={zoom.onFit}
-                aria-pressed={zoom.value === null}
-                disabled={loading}
-              >
-                Ajustar
-              </button>
-            </div>
+              {toolsOpen ? "Ocultar herramientas" : "Herramientas"}
+            </button>
           )}
         </div>
-      )}
-
-      {hasDocument && search && (
-        <form
-          className="reader-search"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            search.onSearch();
-          }}
-        >
-          <div className="reader-search__field">
-            <label
-              className="reader-search__label"
-              htmlFor="reader-search-input"
-            >
-              Buscar en este PDF
-            </label>
-
-            <div className="reader-search__input-group">
-              <input
-                ref={searchInputRef}
-                id="reader-search-input"
-                type="search"
-                className="reader-search__input"
-                placeholder="Escribe una palabra o frase"
-                value={search.query}
-                onChange={(event) => search.onQueryChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing) {
-                    return;
-                  }
-
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-
-                    search.onQueryChange("");
-                    event.currentTarget.blur();
-
-                    return;
-                  }
-
-                  if (
-                    event.key === "Enter" &&
-                    search.status === "done" &&
-                    search.totalMatches > 0
-                  ) {
-                    event.preventDefault();
-
-                    if (event.shiftKey) {
-                      search.onPrevious();
-                    } else {
-                      search.onNext();
-                    }
-                  }
-                }}
-                aria-keyshortcuts="Control+F Meta+F"
-                autoComplete="off"
-              />
-
-              <button
-                type="submit"
-                className="reader-button reader-button--primary"
-                disabled={
-                  loading ||
-                  search.status === "searching" ||
-                  !search.query.trim()
-                }
-              >
-                Buscar
-              </button>
-            </div>
-          </div>
-
-          <div className="reader-search__results">
-            <span
-              className="reader-search__status"
-              role="status"
-              aria-live="polite"
-            >
-              {search.status === "searching"
-                ? `Buscando: ${search.scannedPages} de ${search.totalPages} páginas`
-                : search.status === "error"
-                  ? `Error: ${search.error ?? "No se pudo buscar"}`
-                  : search.status === "done"
-                    ? search.pagesWithMatches > 0
-                      ? `${search.totalMatches} coincidencias en ${search.pagesWithMatches} páginas`
-                      : "No se encontraron coincidencias"
-                    : "Introduce un término y pulsa Buscar"}
-            </span>
-
-            {search.status === "done" && search.pagesWithMatches > 0 && (
-              <div className="reader-search__navigation">
-                <span className="reader-search__counter">
-                  Coincidencia {search.selectedIndex + 1} de{" "}
-                  {search.totalMatches}
-                </span>
-
-                <button
-                  type="button"
-                  className="reader-button reader-button--icon"
-                  aria-label="Página anterior con resultados"
-                  onClick={search.onPrevious}
-                  disabled={search.totalMatches <= 1}
-                >
-                  ‹
-                </button>
-
-                <button
-                  type="button"
-                  className="reader-button reader-button--icon"
-                  aria-label="Página siguiente con resultados"
-                  onClick={search.onNext}
-                  disabled={search.totalMatches <= 1}
-                >
-                  ›
-                </button>
-              </div>
-            )}
-          </div>
-        </form>
       )}
 
       {error && (
@@ -322,23 +249,76 @@ export function ReaderShell({
         </p>
       )}
 
-      <section
-        ref={viewportRef}
-        key={`${documentKey ?? "empty"}-${pageNumber ?? 0}`}
-        className="reader-viewport"
-        aria-label="Contenido del documento"
+      <div
+        className={
+          hasTools && toolsOpen
+            ? "reader-workspace"
+            : "reader-workspace reader-workspace--solo"
+        }
       >
-        {loading ? (
-          <p className="reader-message">Preparando documento...</p>
-        ) : children ? (
-          children
-        ) : (
-          <div className="reader-empty">
-            <h1>Tu próxima lectura comienza aquí</h1>
-            <p>Selecciona un documento PDF o EPUB para comenzar.</p>
-          </div>
+        <section
+          ref={viewportRef}
+          key={`${documentKey ?? "empty"}-${pageNumber ?? 0}`}
+          className="reader-viewport"
+          aria-label="Contenido del documento"
+        >
+          {loading ? (
+            <p className="reader-message">Preparando documento...</p>
+          ) : children ? (
+            children
+          ) : (
+            <div className="reader-empty">
+              <h1>Tu próxima lectura comienza aquí</h1>
+              <p>Selecciona un documento PDF o EPUB para comenzar.</p>
+            </div>
+          )}
+        </section>
+
+        {hasTools && toolsOpen && isMobile && (
+          <button
+            type="button"
+            className="reader-tools-backdrop"
+            aria-label="Cerrar herramientas"
+            onClick={closeTools}
+          />
         )}
-      </section>
+
+        {hasTools && (
+          <aside
+            ref={toolsPanelRef}
+            id="reader-tools-panel"
+            className="reader-tools"
+            aria-label="Herramientas de lectura"
+            role={isMobile ? "dialog" : "complementary"}
+            aria-modal={isMobile ? true : undefined}
+            tabIndex={-1}
+            hidden={!toolsOpen}
+          >
+            <div className="reader-tools__header">
+              <h2>Herramientas</h2>
+
+              <button
+                type="button"
+                className="reader-button reader-tools__close"
+                data-reader-tools-close
+                onClick={closeTools}
+                aria-label="Cerrar panel de herramientas"
+              >
+                ×
+              </button>
+            </div>
+
+            <ReaderTools
+              zoom={zoom}
+              search={search}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              searchInputRef={searchInputRef}
+              loading={loading}
+            />
+          </aside>
+        )}
+      </div>
     </main>
   );
 }
