@@ -118,9 +118,11 @@ export function ReaderShell({
   useEffect(() => {
     if (!toolsOpen || !hasTools || !isMobile) return;
 
-    const panel = toolsPanelRef.current;
+    const currentPanel = toolsPanelRef.current;
 
-    if (!panel) return;
+    if (!currentPanel) return;
+
+    const panel: HTMLElement = currentPanel;
 
     panel
       .querySelector<HTMLButtonElement>("[data-reader-tools-close]")
