@@ -182,11 +182,9 @@ export function EpubChapter({
         boxSizing: "border-box",
         width: "min(100%, 760px)",
         margin: "12px auto 24px",
-        padding: "clamp(20px, 5vw, 48px)",
+        padding: "clamp(4px, 2vw, 28px)",
         background: "var(--reader-surface)",
         color: "var(--reader-text)",
-        border: "1px solid rgba(201, 193, 177, 0.35)",
-        borderRadius: "6px",
         lineHeight: 1.8,
         overflowWrap: "anywhere",
       }}

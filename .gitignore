@@ -6,6 +6,8 @@
 # Dependencies
 node_modules/
 
+prompts/
+
 # Frontend build
 dist/
 dist-ssr/
