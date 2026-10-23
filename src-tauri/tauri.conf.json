@@ -26,11 +26,11 @@
         "form-action": "'none'",
         "script-src": "'self' 'wasm-unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: blob:",
+        "img-src": "'self' data: blob: https:",
         "font-src": "'self' data: blob:",
         "media-src": "'self' blob:",
         "worker-src": "'self' blob:",
-        "connect-src": "'self' ipc: http://ipc.localhost",
+        "connect-src": "'self' ipc: http://ipc.localhost https:",
         "frame-src": "'none'"
       },
       "devCsp": {
@@ -40,11 +40,11 @@
         "form-action": "'none'",
         "script-src": "'self' 'unsafe-inline' 'wasm-unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: blob:",
+        "img-src": "'self' data: blob: https:",
         "font-src": "'self' data: blob:",
         "media-src": "'self' blob:",
         "worker-src": "'self' blob:",
-        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:1421 ws://localhost:1421",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:1421 ws://localhost:1421 https:",
         "frame-src": "'none'"
       }
     }

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { BookOpenIcon } from "@phosphor-icons/react";
 import type { LibraryBook, LibraryService } from "./LibrarySource";
+import {
+  getEffectiveBookMetadata,
+  METADATA_UPDATED_EVENT,
+} from "./PublicBookMetadata";
 
 let active = 0;
 const queue: (() => void)[] = [];
@@ -18,14 +22,30 @@ type Props = { book: LibraryBook; loader: LibraryService["loadCover"]; revision:
 
 export function LibraryCover({ book, loader, revision }: Props) {
   const element = useRef<HTMLDivElement>(null);
-  const [url, setUrl] = useState<string | null>(null);
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
+  const [remoteFailed, setRemoteFailed] = useState(false);
   const [status, setStatus] = useState("idle");
+  const [, setMetaVersion] = useState(0);
   const key = JSON.stringify([book.path, book.size, book.modified]);
+
+  useEffect(() => {
+    function handleMetaUpdate(event: Event): void {
+      const detail = (event as CustomEvent<{ bookPath?: string }>).detail;
+      if (!detail?.bookPath || detail.bookPath === book.path) {
+        setRemoteFailed(false);
+        setMetaVersion((v) => v + 1);
+      }
+    }
+    window.addEventListener(METADATA_UPDATED_EVENT, handleMetaUpdate);
+    return () => window.removeEventListener(METADATA_UPDATED_EVENT, handleMetaUpdate);
+  }, [book.path]);
+
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | undefined;
     let started = false;
-    setUrl(null);
+    setLocalUrl(null);
+    setRemoteFailed(false);
     setStatus("idle");
     const load = () => {
       if (started || !loader) { if (!loader) setStatus("unavailable"); return; }
@@ -38,7 +58,7 @@ export function LibraryCover({ book, loader, revision }: Props) {
         if (controller.signal.aborted) return;
         if (!blob) { setStatus("unavailable"); return; }
         objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
+        setLocalUrl(objectUrl);
         setStatus("ready");
       }).catch(() => { if (!controller.signal.aborted) setStatus("unavailable"); });
     };
@@ -53,10 +73,28 @@ export function LibraryCover({ book, loader, revision }: Props) {
     };
   }, [key, loader, revision]);
 
-  return <div ref={element} className={`library-book__cover${url ? " library-book__cover--image" : ""}`} data-cover-status={status}>
-    {url ? <img src={url} alt={`Portada de ${book.name}`} decoding="async" onError={() => { setUrl(null); setStatus("unavailable"); }} /> : <>
+  const savedMeta = getEffectiveBookMetadata(book.path);
+  const remoteUrl = !remoteFailed ? (savedMeta?.coverUrl ?? null) : null;
+  const preferRemote = Boolean(
+    remoteUrl && savedMeta?.source.includes("Editado"),
+  );
+  const displayUrl = preferRemote
+    ? (remoteUrl ?? localUrl)
+    : (localUrl ?? (status === "unavailable" ? remoteUrl : null));
+  const displayTitle =
+    savedMeta?.title ?? book.name.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+
+  return <div ref={element} className={`library-book__cover${displayUrl ? " library-book__cover--image" : ""}`} data-cover-status={displayUrl ? "ready" : status}>
+    {displayUrl ? <img src={displayUrl} alt={`Portada de ${displayTitle}`} decoding="async" onError={() => {
+      if (displayUrl === remoteUrl) {
+        setRemoteFailed(true);
+      } else {
+        setLocalUrl(null);
+        setStatus("unavailable");
+      }
+    }} /> : <>
       <BookOpenIcon size={44} weight="thin" aria-hidden="true" />
-      <span className="library-book__cover-title">{book.name.replace(/\.[^.]+$/, "").replace(/_/g, " ")}</span>
+      <span className="library-book__cover-title">{displayTitle}</span>
       <span className="library-book__cover-footer">{status === "loading" ? "CARGANDO PORTADA…" : status === "unavailable" ? "SIN PORTADA DISPONIBLE" : "UNIVERSAL READER"}</span>
     </>}
     <span className="library-book__format">{book.format.toUpperCase()}</span>

@@ -1,4 +1,3 @@
-
 declare module "foliate-js/view.js" {
   export interface FoliateSection {
     id?: string;
@@ -16,6 +15,8 @@ declare module "foliate-js/view.js" {
     metadata?: {
       title?: unknown;
       author?: unknown;
+      description?: unknown;
+      language?: unknown;
     };
 
     sections: FoliateSection[];
