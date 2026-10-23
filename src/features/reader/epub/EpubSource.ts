@@ -69,7 +69,7 @@ export type EpubSession = {
 const MAX_EPUB_BYTES = 128 * 1024 * 1024;
 const MAX_RANGE_BYTES = 16 * 1024 * 1024;
 
-class NativeRangeSource {
+export class NativeRangeSource {
   private queue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -180,7 +180,7 @@ function clampSliceIndex(index: number, size: number): number {
  *
  * It does not require loading the entire book up front.
  */
-class NativeFileBlob extends Blob {
+export class NativeFileBlob extends Blob {
   readonly name: string;
 
   constructor(
