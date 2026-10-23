@@ -17,6 +17,8 @@ import {
 
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
+import { LibraryScreen } from "./features/library/LibraryScreen";
+
 import { ReaderShell } from "./features/reader/ReaderShell";
 import { PdfCanvasPage } from "./features/reader/pdf/PdfCanvasPage";
 import { usePdfSearch } from "./features/reader/pdf/usePdfSearch";
@@ -271,7 +273,7 @@ function App() {
     viewport.scrollTop += targetY - centerY;
   }, []);
 
-  async function selectDocument(): Promise<void> {
+  async function selectDocument(path?: string, name?: string): Promise<void> {
     if (openingRef.current || closingRef.current || !mountedRef.current) {
       return;
     }
@@ -288,7 +290,7 @@ function App() {
     openingRef.current = pending;
 
     try {
-      const selected = await open({
+      const selected = path ?? await open({
         multiple: false,
         directory: false,
         filters: [
@@ -358,7 +360,7 @@ function App() {
         signature[3] === 0x04;
 
       if (validZIP) {
-        const fileName = selected.split(/[\\/]/).pop() || "book.epub";
+        const fileName = name || selected.split(/[\\/]/).pop() || "book.epub";
 
         const session = await openEpub(file, size, fileName);
 
@@ -463,7 +465,7 @@ function App() {
       setPageNumber(1);
       setZoom(null);
 
-      setPdfFileName(selected.split(/[\\/]/).pop() || "Documento PDF");
+      setPdfFileName(name || selected.split(/[\\/]/).pop() || "Documento PDF");
 
       setDocument(loadedDocument);
     } catch (cause) {
@@ -582,157 +584,169 @@ function App() {
     : null;
 
   return (
-    <ReaderShell
-      title="Universal Reader"
-      loading={loading}
-      error={error}
-      documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
-      pageNumber={document ? pageNumber : epub ? epubSectionIndex + 1 : null}
-      pageCount={document?.numPages ?? epub?.sectionCount ?? null}
-      navigationUnit={document ? "página" : "sección"}
-      onSelectFile={() => void selectDocument()}
-      viewportRef={viewportRef}
-      bookTitle={epub?.title ?? (document ? pdfFileName : null)}
-      chapterTitle={currentChapterTitle}
-      bookAuthor={epub?.author ?? null}
-      onReturnHome={() => void returnHome()}
-      onPrevious={() => {
-        if (epub) {
-          setEpubSectionIndex((current) => Math.max(0, current - 1));
-          return;
-        }
-
-        zoomAnchorRef.current = null;
-
-        setPageNumber((current) => Math.max(1, current - 1));
-      }}
-      onNext={() => {
-        if (epub) {
-          setEpubSectionIndex((current) =>
-            Math.min(epub.sectionCount - 1, current + 1),
-          );
-          return;
-        }
-
-        zoomAnchorRef.current = null;
-
-        setPageNumber((current) =>
-          Math.min(document?.numPages ?? current, current + 1),
-        );
-      }}
-      onGoToPage={(target) => {
-        if (document) {
-          zoomAnchorRef.current = null;
-
-          setPageNumber(Math.max(1, Math.min(document.numPages, target)));
-
-          return;
-        }
-
-        if (epub) {
-          setEpubSectionIndex(
-            Math.max(0, Math.min(epub.sectionCount - 1, target - 1)),
-          );
-        }
-      }}
-      zoom={
-        document
-          ? {
-              value: zoom,
-              min: MIN_ZOOM,
-              max: MAX_ZOOM,
-              onIncrease: () =>
-                changeZoom(Math.min(MAX_ZOOM, (zoom ?? 1) + ZOOM_STEP)),
-              onDecrease: () =>
-                changeZoom(Math.max(MIN_ZOOM, (zoom ?? 1) - ZOOM_STEP)),
-              onFit: () => changeZoom(null),
-            }
-          : epub
-            ? {
-                value:
-                  epubAppearance.fontSize === DEFAULT_EPUB_APPEARANCE.fontSize
-                    ? null
-                    : epubAppearance.fontSize /
-                      DEFAULT_EPUB_APPEARANCE.fontSize,
-
-                min: 16 / DEFAULT_EPUB_APPEARANCE.fontSize,
-
-                max: 28 / DEFAULT_EPUB_APPEARANCE.fontSize,
-
-                onIncrease: () => {
-                  setEpubAppearance((current) => ({
-                    ...current,
-                    fontSize: Math.min(28, current.fontSize + 1),
-                  }));
-                },
-
-                onDecrease: () => {
-                  setEpubAppearance((current) => ({
-                    ...current,
-                    fontSize: Math.max(16, current.fontSize - 1),
-                  }));
-                },
-
-                onFit: () => {
-                  setEpubAppearance((current) => ({
-                    ...current,
-                    fontSize: DEFAULT_EPUB_APPEARANCE.fontSize,
-                  }));
-                },
-              }
-            : undefined
-      }
-      search={
-        document
-          ? {
-              query: pdfSearch.query,
-              status: pdfSearch.status,
-              scannedPages: pdfSearch.scannedPages,
-              totalPages: document.numPages,
-              pagesWithMatches: pdfSearch.pages.length,
-              totalMatches: pdfSearch.totalMatches,
-              selectedIndex: pdfSearch.selectedIndex,
-              error: pdfSearch.error,
-              onQueryChange: pdfSearch.changeQuery,
-              onSearch: pdfSearch.search,
-              onPrevious: pdfSearch.previousResult,
-              onNext: pdfSearch.nextResult,
-            }
-          : undefined
-      }
-      epubTools={
-        epub && activeEpubRef.current
-          ? {
-              toc: activeEpubRef.current.toc,
-              sectionIndex: epubSectionIndex,
-              onNavigateSection: setEpubSectionIndex,
-              appearance: epubAppearance,
-              onAppearanceChange: setEpubAppearance,
-            }
-          : undefined
-      }
-    >
-      {document ? (
-        <PdfCanvasPage
-          key={`${document.fingerprints[0]}-${pageNumber}`}
-          document={document}
-          pageNumber={pageNumber}
-          zoom={zoom}
-          highlightQuery={pdfSearch.status === "done" ? pdfSearch.query : null}
-          activeMatchIndex={activeMatchIndex}
-          onActiveMatchReady={centerActiveMatch}
-          onError={setError}
-          onCanvasLayout={restoreZoomPosition}
+    <>
+      <div hidden={document !== null || epub !== null}>
+        <LibraryScreen
+          loading={loading}
+          error={error}
+          onOpenFile={() => void selectDocument()}
+          onOpenBook={(book) => void selectDocument(book.path, book.name)}
         />
-      ) : epub && activeEpubRef.current ? (
-        <EpubChapter
-          session={activeEpubRef.current}
-          sectionIndex={epubSectionIndex}
-          appearance={epubAppearance}
+      </div>
+      {(document !== null || epub !== null) && (
+        <ReaderShell
+          title="Universal Reader"
+          loading={loading}
+          error={error}
+          documentKey={document?.fingerprints[0] ?? epub?.fileName ?? null}
+          pageNumber={document ? pageNumber : epub ? epubSectionIndex + 1 : null}
+          pageCount={document?.numPages ?? epub?.sectionCount ?? null}
+          navigationUnit={document ? "página" : "sección"}
+          onSelectFile={() => void selectDocument()}
           viewportRef={viewportRef}
-        />
-      ) : null}
-    </ReaderShell>
+          bookTitle={epub?.title ?? (document ? pdfFileName : null)}
+          chapterTitle={currentChapterTitle}
+          bookAuthor={epub?.author ?? null}
+          onReturnHome={() => void returnHome()}
+          onPrevious={() => {
+            if (epub) {
+              setEpubSectionIndex((current) => Math.max(0, current - 1));
+              return;
+            }
+
+            zoomAnchorRef.current = null;
+
+            setPageNumber((current) => Math.max(1, current - 1));
+          }}
+          onNext={() => {
+            if (epub) {
+              setEpubSectionIndex((current) =>
+                Math.min(epub.sectionCount - 1, current + 1),
+              );
+              return;
+            }
+
+            zoomAnchorRef.current = null;
+
+            setPageNumber((current) =>
+              Math.min(document?.numPages ?? current, current + 1),
+            );
+          }}
+          onGoToPage={(target) => {
+            if (document) {
+              zoomAnchorRef.current = null;
+
+              setPageNumber(Math.max(1, Math.min(document.numPages, target)));
+
+              return;
+            }
+
+            if (epub) {
+              setEpubSectionIndex(
+                Math.max(0, Math.min(epub.sectionCount - 1, target - 1)),
+              );
+            }
+          }}
+          zoom={
+            document
+              ? {
+                  value: zoom,
+                  min: MIN_ZOOM,
+                  max: MAX_ZOOM,
+                  onIncrease: () =>
+                    changeZoom(Math.min(MAX_ZOOM, (zoom ?? 1) + ZOOM_STEP)),
+                  onDecrease: () =>
+                    changeZoom(Math.max(MIN_ZOOM, (zoom ?? 1) - ZOOM_STEP)),
+                  onFit: () => changeZoom(null),
+                }
+              : epub
+                ? {
+                    value:
+                      epubAppearance.fontSize === DEFAULT_EPUB_APPEARANCE.fontSize
+                        ? null
+                        : epubAppearance.fontSize /
+                          DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                    min: 16 / DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                    max: 28 / DEFAULT_EPUB_APPEARANCE.fontSize,
+
+                    onIncrease: () => {
+                      setEpubAppearance((current) => ({
+                        ...current,
+                        fontSize: Math.min(28, current.fontSize + 1),
+                      }));
+                    },
+
+                    onDecrease: () => {
+                      setEpubAppearance((current) => ({
+                        ...current,
+                        fontSize: Math.max(16, current.fontSize - 1),
+                      }));
+                    },
+
+                    onFit: () => {
+                      setEpubAppearance((current) => ({
+                        ...current,
+                        fontSize: DEFAULT_EPUB_APPEARANCE.fontSize,
+                      }));
+                    },
+                  }
+                : undefined
+          }
+          search={
+            document
+              ? {
+                  query: pdfSearch.query,
+                  status: pdfSearch.status,
+                  scannedPages: pdfSearch.scannedPages,
+                  totalPages: document.numPages,
+                  pagesWithMatches: pdfSearch.pages.length,
+                  totalMatches: pdfSearch.totalMatches,
+                  selectedIndex: pdfSearch.selectedIndex,
+                  error: pdfSearch.error,
+                  onQueryChange: pdfSearch.changeQuery,
+                  onSearch: pdfSearch.search,
+                  onPrevious: pdfSearch.previousResult,
+                  onNext: pdfSearch.nextResult,
+                }
+              : undefined
+          }
+          epubTools={
+            epub && activeEpubRef.current
+              ? {
+                  toc: activeEpubRef.current.toc,
+                  sectionIndex: epubSectionIndex,
+                  onNavigateSection: setEpubSectionIndex,
+                  appearance: epubAppearance,
+                  onAppearanceChange: setEpubAppearance,
+                }
+              : undefined
+          }
+        >
+          {document ? (
+            <PdfCanvasPage
+              key={`${document.fingerprints[0]}-${pageNumber}`}
+              document={document}
+              pageNumber={pageNumber}
+              zoom={zoom}
+              highlightQuery={pdfSearch.status === "done" ? pdfSearch.query : null}
+              activeMatchIndex={activeMatchIndex}
+              onActiveMatchReady={centerActiveMatch}
+              onError={setError}
+              onCanvasLayout={restoreZoomPosition}
+            />
+          ) : epub && activeEpubRef.current ? (
+            <EpubChapter
+              session={activeEpubRef.current}
+              sectionIndex={epubSectionIndex}
+              appearance={epubAppearance}
+              viewportRef={viewportRef}
+            />
+          ) : null}
+        </ReaderShell>
+      )}
+    </>
   );
 }
 
