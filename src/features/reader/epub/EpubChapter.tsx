@@ -175,14 +175,21 @@ export function EpubChapter({
     };
   }, [session, sectionIndex, isCurrent, content, viewportRef]);
 
+  const isCover = Boolean(content?.coverUrl);
+
   return (
     <article
       aria-label="Contenido del libro EPUB"
+      className={isCover ? "epub-chapter epub-chapter--cover" : "epub-chapter"}
       style={{
         boxSizing: "border-box",
-        width: "min(100%, 960px)",
+        width: isCover ? "100%" : "min(100%, 960px)",
+        height: isCover ? "100%" : undefined,
         margin: "0 auto",
-        padding: "4px 8px 16px",
+        padding: isCover ? 0 : "4px 8px 16px",
+        display: isCover ? "flex" : undefined,
+        alignItems: isCover ? "center" : undefined,
+        justifyContent: isCover ? "center" : undefined,
         background: "var(--reader-surface)",
         color: "var(--reader-text)",
         lineHeight: 1.8,
@@ -212,9 +219,14 @@ export function EpubChapter({
         <p role="alert">No se pudo leer esta sección: {error}</p>
       ) : content?.coverUrl ? (
         <figure
+          className="epub-cover-figure"
           style={{
             margin: 0,
-            textAlign: "center",
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           <img
@@ -224,11 +236,8 @@ export function EpubChapter({
             style={{
               display: "block",
               width: "100%",
-              height: "auto",
-              maxWidth: "520px",
-              maxHeight: "75vh",
+              height: "100%",
               objectFit: "contain",
-              marginInline: "auto",
             }}
           />
         </figure>

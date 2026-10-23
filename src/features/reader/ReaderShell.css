@@ -73,6 +73,13 @@ html, body, #root { width: 100%; height: 100%; margin: 0; }
   scrollbar-width: thin;
   scrollbar-color: #c4c3ba transparent;
 }
+.reader-viewport:has(.epub-chapter--cover) {
+  padding: 0;
+  overflow: hidden;
+}
+.reader-viewport:has(.pdf-page-frame) {
+  padding: 8px;
+}
 .reader-error {
   grid-area: error; margin: 0; padding: 12px 20px; background: #fff1e9; color: #8a3523;
   font-size: 13px; overflow-wrap: anywhere; max-height: 20dvh; overflow: auto;
@@ -171,6 +178,8 @@ html, body, #root { width: 100%; height: 100%; margin: 0; }
   .reader-header__chapter-title { font-size: 11px; }
   .reader-header__author { display: none; }
   .reader-viewport { padding: 16px 12px 28px; border-radius: 0 0 12px 12px; }
+  .reader-viewport:has(.epub-chapter--cover),
+  .reader-viewport:has(.pdf-page-frame) { padding: 0; }
   .reader-tools { max-height: 38dvh; padding: 12px 14px 16px; margin-top: 8px; border-radius: 12px; }
   .reader-tools__header { padding-bottom: 10px; }
   .reader-tools__eyebrow { display: none; }

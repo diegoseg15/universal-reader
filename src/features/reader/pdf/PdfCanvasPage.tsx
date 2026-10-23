@@ -129,7 +129,7 @@ function highlightPageText(
 
         const end: TextPoint = {
           node: textNode,
-          offset: endOffset,
+          offset,
         };
 
         appendCharacter(character, start, end);
@@ -260,7 +260,7 @@ function CanvasRenderer({
       }
 
       const targetWidth = Math.min(
-        Math.max(1, availableWidth - 24),
+        Math.max(1, availableWidth),
         MAX_PAGE_WIDTH,
       );
 
