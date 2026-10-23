@@ -180,9 +180,9 @@ export function EpubChapter({
       aria-label="Contenido del libro EPUB"
       style={{
         boxSizing: "border-box",
-        width: "min(100%, 760px)",
-        margin: "12px auto 24px",
-        padding: "clamp(4px, 2vw, 28px)",
+        width: "min(100%, 960px)",
+        margin: "0 auto",
+        padding: "4px 8px 16px",
         background: "var(--reader-surface)",
         color: "var(--reader-text)",
         lineHeight: 1.8,

@@ -65,7 +65,7 @@ function renderBlock(
         <Heading
           key={index}
           style={{
-            margin: "1.2em 0 0.55em",
+            margin: index === 0 ? "0.2em 0 0.55em" : "1.2em 0 0.55em",
             fontSize: `${Math.max(1.1, 1.7 - (level - 1) * 0.12)}em`,
             lineHeight: 1.3,
             breakAfter: "avoid",
