@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:library": "node --experimental-strip-types --test tests/library-tree.test.ts",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -16,6 +17,7 @@
     "@tauri-apps/plugin-fs": "~2.7.0",
     "@tauri-apps/plugin-opener": "^2",
     "foliate-js": "1.0.1",
+    "libarchive.js": "2.0.2",
     "pdfjs-dist": "6.4.299",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

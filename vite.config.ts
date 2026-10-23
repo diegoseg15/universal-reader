@@ -12,6 +12,11 @@ export default defineConfig(() => ({
     viteStaticCopy({
       targets: [
         {
+          src: "node_modules/libarchive.js/dist/{worker-bundle.js,libarchive.wasm}",
+          dest: "libarchive",
+          rename: { stripBase: true },
+        },
+        {
           src: "node_modules/pdfjs-dist/wasm/*",
           dest: "pdfjs-wasm",
           rename: {
