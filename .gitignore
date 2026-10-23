@@ -18,9 +18,13 @@ coverage/
 # Rust / Tauri build
 target/
 src-tauri/target/
+src-tauri/plugins/**/target/
 
 # Generated native projects and schemas
 src-tauri/gen/
+**/.gradle/
+src-tauri/plugins/**/android/.tauri/
+src-tauri/plugins/**/android/build/
 
 # Logs
 logs/
@@ -57,7 +61,7 @@ lerna-debug.log*
 
 # Local content directories
 books/
-library/
+/library/
 local-library/
 test-data/private/
 
