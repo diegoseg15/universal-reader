@@ -34,6 +34,60 @@ import {
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+const BOOK_PROGRESS_STORAGE_KEY = "universal-reader:book-progress:v1";
+
+export type StoredBookReadingProgress = {
+  currentPage: number;
+  totalPages: number;
+};
+
+export function readStoredBookProgress(
+  bookPath: string,
+): StoredBookReadingProgress | null {
+  try {
+    const raw = window.localStorage.getItem(BOOK_PROGRESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, StoredBookReadingProgress>;
+    const entry = parsed?.[bookPath];
+    if (
+      entry &&
+      typeof entry.currentPage === "number" &&
+      typeof entry.totalPages === "number" &&
+      entry.currentPage >= 1 &&
+      entry.totalPages >= 1
+    ) {
+      return entry;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredBookProgress(
+  bookPath: string,
+  currentPage: number,
+  totalPages: number,
+): void {
+  if (!bookPath || currentPage < 1 || totalPages < 1) return;
+  try {
+    const raw = window.localStorage.getItem(BOOK_PROGRESS_STORAGE_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, StoredBookReadingProgress>)
+      : {};
+    parsed[bookPath] = {
+      currentPage: Math.min(currentPage, totalPages),
+      totalPages,
+    };
+    window.localStorage.setItem(
+      BOOK_PROGRESS_STORAGE_KEY,
+      JSON.stringify(parsed),
+    );
+  } catch {
+    // Ignore storage quota errors.
+  }
+}
+
 type PendingPDF = {
   cancelled: boolean;
   file: FileHandle | null;
@@ -64,6 +118,7 @@ type UseReaderSessionCallbacks = {
 export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [epub, setEpub] = useState<EpubSummary | null>(null);
+  const [activeBookPath, setActiveBookPath] = useState<string | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [epubSectionIndex, setEpubSectionIndex] = useState(0);
   const [epubAppearance, setEpubAppearance] =
@@ -77,9 +132,22 @@ export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!activeBookPath) return;
+    if (document) {
+      saveStoredBookProgress(activeBookPath, pageNumber, document.numPages);
+    } else if (epub) {
+      saveStoredBookProgress(
+        activeBookPath,
+        epubSectionIndex + 1,
+        epub.sectionCount,
+      );
+    }
+  }, [activeBookPath, document, epub, pageNumber, epubSectionIndex]);
+
   const mountedRef = useRef(false);
   const activeRef = useRef<ActivePDF | null>(null);
-  const openingRef = useRef<PendingPDF | null>(null);
+  const openingRef = useRef(null as PendingPDF | null);
   const closingRef = useRef(false);
   const activeEpubRef = useRef<EpubSession | null>(null);
 
@@ -153,6 +221,7 @@ export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) 
       setError(null);
       setEpub(null);
       setPdfFileName(null);
+      setActiveBookPath(null);
 
       onBeforeSwitch();
 
@@ -220,6 +289,7 @@ export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) 
 
         const savedProgress = getEpubProgress(session);
 
+        setActiveBookPath(selected);
         setEpubSectionIndex(savedProgress.lastSection);
         setPageNumber(1);
         setEpub(session.summary);
@@ -304,7 +374,13 @@ export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) 
       pending.task = null;
       pending.transport = null;
 
-      setPageNumber(1);
+      const savedPdfProgress = readStoredBookProgress(selected);
+      const initialPdfPage = savedPdfProgress
+        ? Math.max(1, Math.min(loadedDocument.numPages, savedPdfProgress.currentPage))
+        : 1;
+
+      setActiveBookPath(selected);
+      setPageNumber(initialPdfPage);
       setPdfFileName(name || selected.split(/[\\/]/).pop() || "Documento PDF");
       setDocument(loadedDocument);
     } catch (cause) {
@@ -368,6 +444,7 @@ export function useReaderSession({ onBeforeSwitch }: UseReaderSessionCallbacks) 
 
     setDocument(null);
     setEpub(null);
+    setActiveBookPath(null);
     setPdfFileName(null);
     setError(null);
 

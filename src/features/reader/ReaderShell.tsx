@@ -11,6 +11,7 @@ import {
 import "./ReaderShell.css";
 
 import { ReaderBottomNavigation } from "./ReaderBottomNavigation";
+import { useReaderNavigationGestures } from "./useReaderNavigationGestures";
 
 import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/csr/SlidersHorizontal";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
@@ -92,6 +93,14 @@ export function ReaderShell({
 
   const searchAvailable = hasDocument && search !== undefined && !loading;
 
+  const swipeHandlers = useReaderNavigationGestures({
+    enabled: hasDocument && !loading,
+    pageNumber,
+    pageCount,
+    onPrevious,
+    onNext,
+  });
+
   useEffect(() => {
     const media = window.matchMedia(MOBILE_QUERY);
 
@@ -138,56 +147,6 @@ export function ReaderShell({
       window.removeEventListener("keydown", handleSearchShortcut, true);
     };
   }, [searchAvailable]);
-
-  useEffect(() => {
-    if (!hasDocument || loading || pageNumber === null || pageCount === null) {
-      return;
-    }
-
-    function handleArrowNavigation(event: KeyboardEvent): void {
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey ||
-        (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-      ) {
-        return;
-      }
-
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "SELECT" ||
-          target.tagName === "TEXTAREA")
-      ) {
-        return;
-      }
-
-      if (event.key === "ArrowLeft" && pageNumber !== null && pageNumber > 1) {
-        event.preventDefault();
-        onPrevious();
-      } else if (
-        event.key === "ArrowRight" &&
-        pageNumber !== null &&
-        pageCount !== null &&
-        pageNumber < pageCount
-      ) {
-        event.preventDefault();
-        onNext();
-      }
-    }
-
-    window.addEventListener("keydown", handleArrowNavigation);
-
-    return () => {
-      window.removeEventListener("keydown", handleArrowNavigation);
-    };
-  }, [hasDocument, loading, pageNumber, pageCount, onPrevious, onNext]);
 
   useEffect(() => {
     if (!toolsOpen || !hasTools) return;
@@ -301,6 +260,7 @@ export function ReaderShell({
           }`}
           className="reader-viewport"
           aria-label="Contenido del documento"
+          {...swipeHandlers}
         >
           {loading ? (
             <p className="reader-message">Preparando documento...</p>
