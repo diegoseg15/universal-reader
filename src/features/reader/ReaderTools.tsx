@@ -1,4 +1,10 @@
 import type { RefObject } from "react";
+import {
+  MagnifyingGlassIcon,
+  MagnifyingGlassPlusIcon,
+  ListBulletsIcon,
+  TextAaIcon,
+} from "@phosphor-icons/react";
 
 import type { EpubTocEntry } from "./epub/EpubSource";
 
@@ -84,6 +90,13 @@ export function ReaderTools({
     appearance: "Apariencia",
   };
 
+  const tabIcons = {
+    search: MagnifyingGlassIcon,
+    zoom: MagnifyingGlassPlusIcon,
+    toc: ListBulletsIcon,
+    appearance: TextAaIcon,
+  };
+
   return (
     <>
       <div
@@ -94,20 +107,24 @@ export function ReaderTools({
           gridTemplateColumns: `repeat(${availableTabs.length}, minmax(0, 1fr))`,
         }}
       >
-        {availableTabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            id={`reader-tab-${tab}`}
-            aria-controls={`reader-panel-${tab}`}
-            aria-selected={selectedTab === tab}
-            className="reader-button reader-tools__tab"
-            onClick={() => onTabChange(tab)}
-          >
-            {tabLabels[tab]}
-          </button>
-        ))}
+        {availableTabs.map((tab) => {
+          const Icon = tabIcons[tab];
+          return (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              id={`reader-tab-${tab}`}
+              aria-controls={`reader-panel-${tab}`}
+              aria-selected={selectedTab === tab}
+              className="reader-button reader-tools__tab"
+              onClick={() => onTabChange(tab)}
+            >
+              <Icon size={20} aria-hidden="true" />
+              <span>{tabLabels[tab]}</span>
+            </button>
+          );
+        })}
       </div>
 
       {epubTools && selectedTab === "toc" && (
@@ -168,7 +185,7 @@ export function ReaderTools({
                         width: "100%",
                         padding: "10px 8px",
                         background: isCurrent
-                          ? "rgba(44, 59, 77, 0.1)"
+                          ? "var(--reader-active-bg)"
                           : "transparent",
                         color: "var(--reader-text)",
                         border: isCurrent
@@ -224,7 +241,7 @@ export function ReaderTools({
               }}
               style={{
                 width: "100%",
-                accentColor: "var(--reader-secondary)",
+                accentColor: "var(--reader-accent)",
               }}
             />
           </label>
@@ -296,7 +313,7 @@ export function ReaderTools({
               }}
               style={{
                 width: "100%",
-                accentColor: "var(--reader-secondary)",
+                accentColor: "var(--reader-accent)",
               }}
             />
           </label>

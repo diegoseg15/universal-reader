@@ -82,9 +82,7 @@ export function ReaderShell({
     () => window.matchMedia(MOBILE_QUERY).matches,
   );
 
-  const [toolsOpen, setToolsOpen] = useState(
-    () => !window.matchMedia(MOBILE_QUERY).matches,
-  );
+  const [toolsOpen, setToolsOpen] = useState(true);
 
   const [activeTab, setActiveTab] = useState<ReaderToolTab>("search");
 
@@ -99,7 +97,6 @@ export function ReaderShell({
 
     function handleChange(): void {
       setIsMobile(media.matches);
-      setToolsOpen(!media.matches);
     }
 
     media.addEventListener("change", handleChange);
@@ -143,68 +140,18 @@ export function ReaderShell({
   }, [searchAvailable]);
 
   useEffect(() => {
-    if (!toolsOpen || !hasTools || !isMobile) return;
+    if (!toolsOpen || !hasTools) return;
 
-    const currentPanel = toolsPanelRef.current;
-
-    if (!currentPanel) return;
-
-    const panel: HTMLElement = currentPanel;
-
-    panel
-      .querySelector<HTMLButtonElement>("[data-reader-tools-close]")
-      ?.focus();
-
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.defaultPrevented) return;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setToolsOpen(false);
-        toolsTriggerRef.current?.focus();
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-
-      const focusable = Array.from(
-        panel.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-
-      if (focusable.length === 0) {
-        event.preventDefault();
-        panel.focus();
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      if (
-        event.shiftKey &&
-        (document.activeElement === first ||
-          !panel.contains(document.activeElement))
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (
-        !event.shiftKey &&
-        (document.activeElement === last ||
-          !panel.contains(document.activeElement))
-      ) {
-        event.preventDefault();
-        first.focus();
-      }
+    function handleEscape(event: KeyboardEvent): void {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      if (!toolsPanelRef.current?.contains(document.activeElement)) return;
+      setToolsOpen(false);
+      toolsTriggerRef.current?.focus();
     }
 
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [toolsOpen, hasTools, isMobile]);
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [toolsOpen, hasTools]);
 
   function closeTools(): void {
     setToolsOpen(false);
@@ -212,7 +159,9 @@ export function ReaderShell({
   }
 
   return (
-    <main className="reader-shell">
+    <main
+      className={`reader-shell${hasTools && toolsOpen ? " reader-shell--tools-open" : ""}`}
+    >
       <header className="reader-header">
         <div className="reader-header__identity">
           {hasDocument ? (
@@ -326,28 +275,21 @@ export function ReaderShell({
           )}
         </section>
 
-        {hasTools && toolsOpen && isMobile && (
-          <button
-            type="button"
-            className="reader-tools-backdrop"
-            aria-label="Cerrar herramientas"
-            onClick={closeTools}
-          />
-        )}
-
         {hasTools && (
           <aside
             ref={toolsPanelRef}
             id="reader-tools-panel"
             className="reader-tools"
             aria-label="Herramientas de lectura"
-            role={isMobile ? "dialog" : "complementary"}
-            aria-modal={isMobile ? true : undefined}
+            role="complementary"
             tabIndex={-1}
             hidden={!toolsOpen}
           >
             <div className="reader-tools__header">
-              <h2>Herramientas</h2>
+              <div className="reader-tools__heading">
+                <span className="reader-tools__eyebrow">A TU RITMO</span>
+                <h2>Tu espacio de lectura</h2>
+              </div>
 
               <button
                 type="button"
