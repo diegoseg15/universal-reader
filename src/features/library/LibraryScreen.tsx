@@ -8,9 +8,8 @@ import {
   BooksIcon,
   CaretLeftIcon,
   CaretRightIcon,
-  HouseIcon,
+  GearSixIcon,
   MagnifyingGlassIcon,
-  SquaresFourIcon,
   StackIcon,
   StackPlusIcon,
   StarIcon,
@@ -50,8 +49,17 @@ type IndexedFolder = LibraryFolder & {
   error?: string;
 };
 type Filter = "all" | "books" | "comics" | "manga" | "documents";
+type MenuSection =
+  | "library"
+  | "search"
+  | "mylist"
+  | "collections"
+  | "settings";
 
 const BOOKMARKS_STORAGE_KEY = "universal-reader.bookmarked-books.v1";
+const METADATA_DECISIONS_KEY = "universal-reader.book-metadata-decisions.v7";
+const USER_RATINGS_KEY = "universal-reader.user-book-ratings.v1";
+const PROGRESS_STORAGE_KEY = "universal-reader:book-progress:v1";
 
 function readBookmarkedSet(): Set<string> {
   try {
@@ -69,46 +77,29 @@ function readBookmarkedSet(): Set<string> {
 }
 
 const HUB_ITEMS: {
-  id: Filter | "favorites";
+  id: Filter;
   title: string;
   subtitle: string;
-  theme: string;
 }[] = [
   {
     id: "all",
-    title: "BIBLIOTECA",
+    title: "TU CATÁLOGO",
     subtitle: "Todo el catálogo",
-    theme: "all",
   },
   {
     id: "books",
     title: "LIBROS",
     subtitle: "Literatura y ensayo",
-    theme: "books",
   },
   {
     id: "comics",
     title: "CÓMICS",
     subtitle: "Novela gráfica",
-    theme: "comics",
   },
   {
     id: "manga",
     title: "MANGA",
     subtitle: "Lectura oriental",
-    theme: "manga",
-  },
-  {
-    id: "documents",
-    title: "DOCUMENTOS",
-    subtitle: "PDFs y estudio",
-    theme: "documents",
-  },
-  {
-    id: "favorites",
-    title: "MI LISTA",
-    subtitle: "Guardados",
-    theme: "favorites",
   },
 ];
 
@@ -125,10 +116,11 @@ export function LibraryScreen({
   const [folders, setFolders] = useState<IndexedFolder[]>([]);
   const [scanning, setScanning] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const [activeMenu, setActiveMenu] = useState<MenuSection>("library");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState("all");
   const [directory, setDirectory] = useState("");
   const [format, setFormat] = useState("all");
@@ -144,16 +136,37 @@ export function LibraryScreen({
   function navigate(folderId: string, path = ""): void {
     setSelectedFolder(folderId);
     setDirectory(normalizeRelativePath(path));
+    setActiveMenu("library");
   }
 
   function resetToHome(): void {
+    setActiveMenu("library");
     setSelectedFolder("all");
     setDirectory("");
     setFilter("all");
     setOnlyFavorites(false);
     setQuery("");
     setFormat("all");
-    setSearchOpen(false);
+  }
+
+  function selectMenu(section: MenuSection): void {
+    setSettingsNotice(null);
+    setActiveMenu(section);
+    if (section === "library") {
+      setOnlyFavorites(false);
+      setQuery("");
+    } else if (section === "search") {
+      setOnlyFavorites(false);
+      window.setTimeout(() => searchInputRef.current?.focus(), 40);
+    } else if (section === "mylist") {
+      setOnlyFavorites(true);
+      setFilter("all");
+      setSelectedFolder("all");
+      setDirectory("");
+    } else if (section === "collections") {
+      setOnlyFavorites(false);
+      setFilter("all");
+    }
   }
 
   async function indexFolders(token: number): Promise<void> {
@@ -291,11 +304,10 @@ export function LibraryScreen({
     favorites: allUniqueBooks.filter((b) => bookmarkedPaths.has(b.path)).length,
   };
 
-  // Spotlight books (up to 7 featured books from the visible/all library)
+  // Spotlight books (up to 7 featured books from the entire library, independent of category filter)
   const spotlightBooks = (() => {
-    const pool = visible.length > 0 ? visible : allUniqueBooks;
-    if (pool.length === 0) return [];
-    const scored = pool.map((book) => {
+    if (allUniqueBooks.length === 0) return [];
+    const scored = allUniqueBooks.map((book) => {
       const progress = readStoredBookProgress(book.path);
       const isFav = bookmarkedPaths.has(book.path);
       const hasMeta = getEffectiveBookMetadata(book.path) !== null;
@@ -306,21 +318,59 @@ export function LibraryScreen({
       if (canReadBook(book)) score += 5;
       return { book, score };
     });
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.book.name.localeCompare(b.book.name, "es", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+    );
     return scored.slice(0, 7).map((entry) => entry.book);
   })();
 
   const safeSpotlightIndex =
     spotlightBooks.length > 0 ? spotlightIndex % spotlightBooks.length : 0;
   const activeSpotlightBook = spotlightBooks[safeSpotlightIndex] ?? null;
+  const [spotlightBackdropUrl, setSpotlightBackdropUrl] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    if (!activeSpotlightBook) {
+      setSpotlightBackdropUrl(null);
+      return;
+    }
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    setSpotlightBackdropUrl(null);
+
+    if (service.loadCover) {
+      void service
+        .loadCover(activeSpotlightBook, controller.signal)
+        .then((blob) => {
+          if (controller.signal.aborted || !blob) return;
+          objectUrl = URL.createObjectURL(blob);
+          setSpotlightBackdropUrl(objectUrl);
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      controller.abort();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [activeSpotlightBook?.path, service, generation.current]);
 
   useEffect(() => {
     if (spotlightBooks.length <= 1 || selectedBook !== null) return;
     const timer = window.setInterval(() => {
       setSpotlightIndex((current) => (current + 1) % spotlightBooks.length);
-    }, 6500);
+    }, 14000);
     return () => window.clearInterval(timer);
-  }, [spotlightBooks.length, selectedBook]);
+  }, [spotlightBooks.length, selectedBook, safeSpotlightIndex]);
 
   // Books currently in progress ("Continuar leyendo")
   const inProgressBooks = allUniqueBooks.filter((book) => {
@@ -356,13 +406,20 @@ export function LibraryScreen({
         }));
 
   const directBooks =
-    selectedFolder === "all" && !onlyFavorites && filter === "all" && !query.trim() && format === "all"
-      ? []
-      : selectedFolder === "all"
-        ? visible
-        : contents.books;
+    activeMenu === "search" || activeMenu === "mylist"
+      ? visible
+      : selectedFolder === "all" &&
+          !onlyFavorites &&
+          filter === "all" &&
+          !query.trim() &&
+          format === "all"
+        ? []
+        : selectedFolder === "all"
+          ? visible
+          : contents.books;
 
   const isHomeOverview =
+    activeMenu === "library" &&
     selectedFolder === "all" &&
     !directory &&
     filter === "all" &&
@@ -477,212 +534,131 @@ export function LibraryScreen({
     (activeSpotlightBook
       ? `${CATEGORY_LABELS[spotlightCategory]} en formato ${activeSpotlightBook.format.toUpperCase()} dentro de tu colección «${activeSpotlightBook.folderName ?? "Biblioteca"}». Abre su ficha para consultar sinopsis, calificaciones y comenzar a leer.`
       : "");
+  const isSpotlightEdited = Boolean(spotlightMeta?.source.includes("Editado"));
+  const resolvedSpotlightBackdropUrl =
+    isSpotlightEdited && spotlightMeta?.coverUrl
+      ? spotlightMeta.coverUrl
+      : (spotlightBackdropUrl ?? spotlightMeta?.coverUrl ?? null);
 
   return (
     <>
       <div hidden={selectedBook !== null}>
         <main className="library-shell">
-          <header className="library-topnav" aria-label="Navegación principal">
-            <div className="library-topnav__left">
-              <button
-                type="button"
-                className="library-brand"
-                onClick={resetToHome}
-                title="Ir al inicio"
-              >
-                <BooksIcon size={28} weight="duotone" />
-                <span>
-                  Universal<span>Reader</span>
-                </span>
-              </button>
-
-              <nav className="library-topnav__links" aria-label="Categorías">
-                <button
-                  type="button"
-                  className={`library-topnav__link${isHomeOverview && !searchOpen ? " is-active" : ""}`}
-                  onClick={resetToHome}
-                >
-                  <HouseIcon size={17} weight="fill" />
-                  <span>INICIO</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${searchOpen || Boolean(query.trim()) ? " is-active" : ""}`}
-                  onClick={() => {
-                    setSearchOpen((current) => {
-                      const next = !current;
-                      if (next) {
-                        window.setTimeout(
-                          () => searchInputRef.current?.focus(),
-                          40,
-                        );
-                      }
-                      return next;
-                    });
-                  }}
-                >
-                  <MagnifyingGlassIcon size={17} weight="bold" />
-                  <span>BUSCAR</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${onlyFavorites ? " is-active" : ""}`}
-                  onClick={() => {
-                    setOnlyFavorites((current) => !current);
-                    setFilter("all");
-                  }}
-                >
-                  <BookmarkSimpleIcon size={17} weight="fill" />
-                  <span>MI LISTA</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${!onlyFavorites && filter === "books" ? " is-active" : ""}`}
-                  onClick={() => {
-                    setOnlyFavorites(false);
-                    setFilter(filter === "books" ? "all" : "books");
-                  }}
-                >
-                  <BookOpenIcon size={17} weight="fill" />
-                  <span>LIBROS</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${!onlyFavorites && filter === "comics" ? " is-active" : ""}`}
-                  onClick={() => {
-                    setOnlyFavorites(false);
-                    setFilter(filter === "comics" ? "all" : "comics");
-                  }}
-                >
-                  <StarIcon size={17} weight="fill" />
-                  <span>CÓMICS</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${!onlyFavorites && filter === "manga" ? " is-active" : ""}`}
-                  onClick={() => {
-                    setOnlyFavorites(false);
-                    setFilter(filter === "manga" ? "all" : "manga");
-                  }}
-                >
-                  <SquaresFourIcon size={17} weight="fill" />
-                  <span>MANGA</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`library-topnav__link${!onlyFavorites && filter === "documents" ? " is-active" : ""}`}
-                  onClick={() => {
-                    setOnlyFavorites(false);
-                    setFilter(filter === "documents" ? "all" : "documents");
-                  }}
-                >
-                  <StackIcon size={17} weight="fill" />
-                  <span>DOCUMENTOS</span>
-                </button>
-              </nav>
-            </div>
-
-            <div className="library-topnav__actions">
-              <button
-                type="button"
-                className="library-button"
-                onClick={onOpenFile}
-                disabled={disabled}
-              >
-                <BookOpenIcon size={18} />
-                <span>Abrir archivo</span>
-              </button>
-              <button
-                type="button"
-                className="library-button library-button--primary"
-                onClick={() => void perform(service.pickFolder)}
-                disabled={disabled}
-              >
-                <StackPlusIcon size={19} />
-                <span>Añadir colección</span>
-              </button>
-              <button
-                type="button"
-                className="library-button library-refresh"
-                onClick={() => void perform()}
-                disabled={disabled}
-                aria-label="Actualizar biblioteca"
-                title="Actualizar biblioteca"
-              >
-                <ArrowClockwiseIcon
-                  size={18}
-                  className={scanning ? "is-spinning" : ""}
-                />
-              </button>
-            </div>
-          </header>
-
-          {(searchOpen ||
-            Boolean(query.trim()) ||
-            format !== "all" ||
-            selectedFolder !== "all") && (
-            <div className="library-search-drawer">
-              <label className="library-search">
-                <MagnifyingGlassIcon size={20} />
-                <input
-                  ref={searchInputRef}
-                  aria-label="Buscar en la biblioteca"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar por título, autor o colección…"
-                  type="search"
-                />
-              </label>
-
-              <select
-                aria-label="Filtrar por colección"
-                value={selectedFolder}
-                onChange={(e) => navigate(e.target.value)}
-              >
-                <option value="all">Todas las colecciones</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.books.length})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Filtrar por formato"
-                value={format}
-                onChange={(e) => setFormat(e.target.value)}
-              >
-                <option value="all">Todos los formatos</option>
-                {format !== "all" && !formats.includes(format) && (
-                  <option value={format}>{format.toUpperCase()}</option>
-                )}
-                {formats.map((f) => (
-                  <option key={f} value={f}>
-                    {f.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-
-              <span className="library-search-drawer__status" role="status">
-                {loading
-                  ? "Abriendo documento…"
-                  : scanning
-                    ? "Explorando colecciones…"
-                    : `${matchingCount} ${matchingCount === 1 ? "archivo" : "archivos"}`}
+          <aside
+            className="library-sidebar"
+            aria-label="Menú principal de la biblioteca"
+          >
+            <button
+              type="button"
+              className="library-brand"
+              onClick={resetToHome}
+              title="Ir a Biblioteca"
+            >
+              <BooksIcon size={28} weight="duotone" />
+              <span>
+                Universal<span>Reader</span>
               </span>
+            </button>
+
+            <nav className="library-sidebar__nav" aria-label="Secciones">
+              <button
+                type="button"
+                className={`library-sidebar__item${activeMenu === "library" ? " is-active" : ""}`}
+                onClick={() => selectMenu("library")}
+              >
+                <BooksIcon
+                  size={20}
+                  weight={activeMenu === "library" ? "fill" : "regular"}
+                />
+                <span>Biblioteca</span>
+                <span className="library-count">{allUniqueBooks.length}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`library-sidebar__item${activeMenu === "search" ? " is-active" : ""}`}
+                onClick={() => selectMenu("search")}
+              >
+                <MagnifyingGlassIcon
+                  size={20}
+                  weight={activeMenu === "search" ? "bold" : "regular"}
+                />
+                <span>Buscar</span>
+              </button>
+
+              <button
+                type="button"
+                className={`library-sidebar__item${activeMenu === "mylist" ? " is-active" : ""}`}
+                onClick={() => selectMenu("mylist")}
+              >
+                <BookmarkSimpleIcon
+                  size={20}
+                  weight={activeMenu === "mylist" ? "fill" : "regular"}
+                />
+                <span>Mi lista</span>
+                {categoryCounts.favorites > 0 && (
+                  <span className="library-count">
+                    {categoryCounts.favorites}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`library-sidebar__item${activeMenu === "collections" ? " is-active" : ""}`}
+                onClick={() => selectMenu("collections")}
+              >
+                <StackIcon
+                  size={20}
+                  weight={activeMenu === "collections" ? "fill" : "regular"}
+                />
+                <span>Gestionar Colecciones</span>
+                <span className="library-count">{folders.length}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`library-sidebar__item${activeMenu === "settings" ? " is-active" : ""}`}
+                onClick={() => selectMenu("settings")}
+              >
+                <GearSixIcon
+                  size={20}
+                  weight={activeMenu === "settings" ? "fill" : "regular"}
+                />
+                <span>Ajustes</span>
+              </button>
+            </nav>
+
+            <div className="library-sidebar__footer">
+              <div className="library-local">
+                <span className="library-local__dot" />
+                <span>Tu biblioteca, en tu dispositivo</span>
+                <button
+                  type="button"
+                  className="library-icon"
+                  onClick={() => void perform()}
+                  disabled={disabled}
+                  aria-label="Actualizar biblioteca"
+                  title="Actualizar biblioteca"
+                >
+                  <ArrowClockwiseIcon
+                    size={16}
+                    className={scanning ? "is-spinning" : ""}
+                  />
+                </button>
+              </div>
             </div>
-          )}
+          </aside>
 
           <section className="library-main" aria-label="Biblioteca">
             {(error || libraryError) && (
               <p className="library-notice library-notice--error" role="alert">
                 {error || libraryError}
+              </p>
+            )}
+            {settingsNotice && (
+              <p className="library-notice" role="status">
+                {settingsNotice}
               </p>
             )}
             {folders
@@ -697,341 +673,219 @@ export function LibraryScreen({
                 </p>
               ))}
 
-            {activeSpotlightBook && (
+            {activeMenu === "settings" ? (
               <section
-                className="library-spotlight"
-                aria-label="Lectura destacada"
+                className="library-settings"
+                aria-label="Ajustes de Universal Reader"
               >
-                <div className="library-spotlight__stage">
-                  {spotlightBooks.length > 1 && (
+                <header className="library-section-header">
+                  <div>
+                    <span className="library-eyebrow">PREFERENCIAS</span>
+                    <h1>Ajustes</h1>
+                    <p>
+                      Administra los datos locales, caché de metadatos e
+                      historial de tu biblioteca.
+                    </p>
+                  </div>
+                </header>
+
+                <div className="library-settings__grid">
+                  <article className="library-settings__card">
+                    <div>
+                      <h3>Metadatos y catálogos públicos</h3>
+                      <p>
+                        Restablece las decisiones y ediciones guardadas para
+                        volver a consultar las APIs públicas al abrir un libro.
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      className="library-spotlight__arrow library-spotlight__arrow--prev"
-                      onClick={() =>
-                        setSpotlightIndex(
-                          (current) =>
-                            (current - 1 + spotlightBooks.length) %
-                            spotlightBooks.length,
-                        )
-                      }
-                      aria-label="Destacado anterior"
+                      className="library-button"
+                      onClick={() => {
+                        window.localStorage.removeItem(METADATA_DECISIONS_KEY);
+                        setMetadataRevision((v) => v + 1);
+                        setSettingsNotice(
+                          "Se restablecieron los metadatos descargados y editados.",
+                        );
+                      }}
                     >
-                      <CaretLeftIcon size={24} weight="bold" />
+                      Restablecer metadatos
                     </button>
-                  )}
+                  </article>
 
-                  <div
-                    className={`library-spotlight__banner library-spotlight__banner--${spotlightCategory}`}
-                    onClick={() => setSelectedBook(activeSpotlightBook)}
-                  >
-                    <div className="library-spotlight__content">
-                      <div className="library-spotlight__badges">
-                        <span className="library-spotlight__pill library-spotlight__pill--accent">
-                          {spotlightProgress &&
-                          spotlightProgress.currentPage > 1
-                            ? "CONTINUAR LECTURA"
-                            : "DESTACADO EN TU BIBLIOTECA"}
-                        </span>
-                        <span className="library-spotlight__pill">
-                          {CATEGORY_LABELS[spotlightCategory].toUpperCase()} ·{" "}
-                          {activeSpotlightBook.format.toUpperCase()}
-                        </span>
-                        {spotlightProgress &&
-                          spotlightProgress.currentPage > 1 && (
-                            <span className="library-spotlight__pill">
-                              Pág. {spotlightProgress.currentPage}
-                              {spotlightProgress.totalPages
-                                ? ` / ${spotlightProgress.totalPages}`
-                                : ""}
-                            </span>
-                          )}
-                      </div>
-
-                      <h1
-                        className="library-spotlight__title"
-                        title={spotlightTitle}
-                      >
-                        {spotlightTitle}
-                      </h1>
-                      <p className="library-spotlight__author">
-                        {spotlightAuthor}
+                  <article className="library-settings__card">
+                    <div>
+                      <h3>Progreso de lectura</h3>
+                      <p>
+                        Limpia el registro de páginas actuales y porcentaje de
+                        lectura acumulado en tus archivos.
                       </p>
-                      <p className="library-spotlight__desc">{spotlightDesc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="library-button"
+                      onClick={() => {
+                        window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
+                        setMetadataRevision((v) => v + 1);
+                        setSettingsNotice(
+                          "Se reinició el historial de progreso de lectura.",
+                        );
+                      }}
+                    >
+                      Reiniciar progreso
+                    </button>
+                  </article>
 
-                      <div
-                        className="library-spotlight__actions"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {canReadBook(activeSpotlightBook) && (
+                  <article className="library-settings__card">
+                    <div>
+                      <h3>Mi lista y calificaciones personales</h3>
+                      <p>
+                        Borra los libros guardados en «Mi lista» y tus
+                        calificaciones personales con estrellas.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="library-button"
+                      onClick={() => {
+                        window.localStorage.removeItem(BOOKMARKS_STORAGE_KEY);
+                        window.localStorage.removeItem(USER_RATINGS_KEY);
+                        setMetadataRevision((v) => v + 1);
+                        setSettingsNotice(
+                          "Se vaciaron «Mi lista» y tus calificaciones personales.",
+                        );
+                      }}
+                    >
+                      Limpiar lista y notas
+                    </button>
+                  </article>
+
+                  <article className="library-settings__card">
+                    <div>
+                      <h3>Sincronización de colecciones</h3>
+                      <p>
+                        Escanea nuevamente todas tus carpetas locales para
+                        detectar nuevos libros, cómics, manga o documentos.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="library-button library-button--primary"
+                      disabled={disabled}
+                      onClick={() => void perform()}
+                    >
+                      <ArrowClockwiseIcon
+                        size={17}
+                        className={scanning ? "is-spinning" : ""}
+                      />
+                      <span>Actualizar todas las colecciones</span>
+                    </button>
+                  </article>
+                </div>
+              </section>
+            ) : activeMenu === "collections" ? (
+              <section
+                className="library-collections-manager"
+                aria-label="Gestionar Colecciones"
+              >
+                <header className="library-section-header">
+                  <div>
+                    <span className="library-eyebrow">CARPETAS LOCALES</span>
+                    <h1>Gestionar Colecciones</h1>
+                    <p>
+                      Añade carpetas de tu dispositivo, explora su contenido o
+                      quítalas de la biblioteca sin borrar tus archivos.
+                    </p>
+                  </div>
+                  <div className="library-section-header__actions">
+                    <button
+                      type="button"
+                      className="library-button"
+                      disabled={disabled}
+                      onClick={() => void perform()}
+                    >
+                      <ArrowClockwiseIcon
+                        size={18}
+                        className={scanning ? "is-spinning" : ""}
+                      />
+                      <span>Actualizar</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="library-button"
+                      disabled={disabled}
+                      onClick={onOpenFile}
+                    >
+                      <BookOpenIcon size={18} />
+                      <span>Abrir archivo</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="library-button library-button--primary"
+                      disabled={disabled}
+                      onClick={() => void perform(service.pickFolder)}
+                    >
+                      <StackPlusIcon size={19} />
+                      <span>Añadir colección</span>
+                    </button>
+                  </div>
+                </header>
+
+                {folders.length > 0 ? (
+                  <div className="library-directory-grid">
+                    {folders.map((folder) => {
+                      const { previews, childCount, categories } =
+                        folderPreview(folder.books, "");
+                      return (
+                        <div
+                          key={folder.id}
+                          className="library-directory-card"
+                        >
                           <button
                             type="button"
-                            className="library-spotlight__btn library-spotlight__btn--primary"
-                            disabled={disabled}
-                            onClick={() => onOpenBook(activeSpotlightBook)}
+                            className="library-directory"
+                            aria-label={`Abrir colección ${folder.name}`}
+                            onClick={() => navigate(folder.id, "")}
                           >
-                            <BookOpenIcon size={18} weight="fill" />
-                            <span>
-                              {spotlightProgress &&
-                              spotlightProgress.currentPage > 1
-                                ? "Continuar leyendo"
-                                : "Comenzar lectura"}
+                            <div
+                              className="library-directory__preview"
+                              data-count={previews.length}
+                              aria-hidden="true"
+                            >
+                              {previews.length ? (
+                                previews.map((book) => (
+                                  <LibraryCover
+                                    key={book.path}
+                                    book={book}
+                                    loader={service.loadCover}
+                                    revision={generation.current}
+                                  />
+                                ))
+                              ) : (
+                                <StackIcon size={48} weight="thin" />
+                              )}
+                            </div>
+                            <span className="library-directory__name">
+                              <StackIcon size={17} aria-hidden="true" />
+                              <span>{folder.name}</span>
+                            </span>
+                            <span className="library-directory__categories">
+                              {categories
+                                .map((category) => CATEGORY_LABELS[category])
+                                .join(" · ") || "Colección"}
+                            </span>
+                            <span className="library-directory__count">
+                              <span>
+                                {childCount > 0 &&
+                                  `${childCount} ${childCount === 1 ? "subcarpeta" : "subcarpetas"} · `}
+                                {folder.books.length}{" "}
+                                {folder.books.length === 1
+                                  ? "archivo"
+                                  : "archivos"}
+                              </span>
+                              <CaretRightIcon size={15} />
                             </span>
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          className="library-spotlight__btn library-spotlight__btn--secondary"
-                          disabled={disabled}
-                          onClick={() => setSelectedBook(activeSpotlightBook)}
-                        >
-                          <span>Ver detalles</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="library-spotlight__Visual">
-                      <div className="library-spotlight__cover">
-                        <LibraryCover
-                          book={activeSpotlightBook}
-                          loader={service.loadCover}
-                          revision={generation.current}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {spotlightBooks.length > 1 && (
-                    <button
-                      type="button"
-                      className="library-spotlight__arrow library-spotlight__arrow--next"
-                      onClick={() =>
-                        setSpotlightIndex(
-                          (current) => (current + 1) % spotlightBooks.length,
-                        )
-                      }
-                      aria-label="Siguiente destacado"
-                    >
-                      <CaretRightIcon size={24} weight="bold" />
-                    </button>
-                  )}
-                </div>
-
-                {spotlightBooks.length > 1 && (
-                  <div
-                    className="library-spotlight__dots"
-                    role="tablist"
-                    aria-label="Seleccionar libro destacado"
-                  >
-                    {spotlightBooks.map((item, idx) => (
-                      <button
-                        key={item.path}
-                        type="button"
-                        role="tab"
-                        aria-selected={idx === safeSpotlightIndex}
-                        aria-label={`Destacado ${idx + 1}: ${item.name}`}
-                        className={`library-spotlight__dot${idx === safeSpotlightIndex ? " is-active" : ""}`}
-                        onClick={() => setSpotlightIndex(idx)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section
-              className="library-hubs"
-              aria-label="Categorías de lectura"
-            >
-              {HUB_ITEMS.map((hub) => {
-                const active =
-                  hub.id === "favorites"
-                    ? onlyFavorites
-                    : !onlyFavorites && filter === hub.id;
-                const count = categoryCounts[hub.id];
-                return (
-                  <button
-                    key={hub.id}
-                    type="button"
-                    className={`library-hub library-hub--${hub.theme}${active ? " is-active" : ""}`}
-                    onClick={() => {
-                      if (hub.id === "favorites") {
-                        setOnlyFavorites((current) => !current);
-                        setFilter("all");
-                      } else if (hub.id === "all") {
-                        resetToHome();
-                      } else {
-                        setOnlyFavorites(false);
-                        setFilter(filter === hub.id ? "all" : hub.id);
-                      }
-                    }}
-                  >
-                    <span className="library-hub__title">{hub.title}</span>
-                    <span className="library-hub__meta">
-                      {hub.subtitle} · {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </section>
-
-            {(selectedFolder !== "all" || directory) && (
-              <nav
-                className="library-breadcrumbs"
-                aria-label="Ruta de colecciones"
-              >
-                <button
-                  className="library-icon"
-                  aria-label="Subir un nivel"
-                  onClick={() =>
-                    directory
-                      ? navigate(
-                          selectedFolder,
-                          breadcrumbs.slice(0, -1).join("/"),
-                        )
-                      : navigate("all")
-                  }
-                >
-                  <ArrowLeftIcon size={18} />
-                </button>
-                <button
-                  aria-current={selectedFolder === "all" ? "page" : undefined}
-                  onClick={() => navigate("all")}
-                >
-                  Biblioteca
-                </button>
-                {currentFolder && (
-                  <>
-                    <CaretRightIcon size={13} aria-hidden="true" />
-                    <button
-                      aria-current={!directory ? "page" : undefined}
-                      onClick={() => navigate(selectedFolder)}
-                    >
-                      {currentFolder.name}
-                    </button>
-                  </>
-                )}
-                {breadcrumbs.map((part, index) => (
-                  <span key={index}>
-                    <CaretRightIcon size={13} aria-hidden="true" />
-                    <button
-                      aria-current={
-                        index === breadcrumbs.length - 1 ? "page" : undefined
-                      }
-                      onClick={() =>
-                        navigate(
-                          selectedFolder,
-                          breadcrumbs.slice(0, index + 1).join("/"),
-                        )
-                      }
-                    >
-                      {part}
-                    </button>
-                  </span>
-                ))}
-              </nav>
-            )}
-
-            {isHomeOverview && inProgressBooks.length > 0 && (
-              <section
-                aria-label="Continuar leyendo"
-                className="library-group"
-              >
-                <h2 className="library-group__title">
-                  Continuar leyendo <span>{inProgressBooks.length}</span>
-                </h2>
-                <div className="library-shelf">
-                  {inProgressBooks
-                    .slice(0, 12)
-                    .map((book) => renderBookCard(book, "continue"))}
-                </div>
-              </section>
-            )}
-
-            {isHomeOverview && recommendedBooks.length > 0 && (
-              <section
-                aria-label="Recomendados para ti"
-                className="library-group"
-              >
-                <h2 className="library-group__title">
-                  Recomendados para ti <span>{visible.length}</span>
-                </h2>
-                <div className="library-shelf">
-                  {recommendedBooks.map((book) =>
-                    renderBookCard(book, "recommended"),
-                  )}
-                </div>
-              </section>
-            )}
-
-            {directories.length > 0 && (
-              <section aria-label="Colecciones" className="library-group">
-                <div className="library-group__header">
-                  <h2 className="library-group__title">
-                    {selectedFolder === "all"
-                      ? "Tus colecciones"
-                      : "Subcolecciones"}{" "}
-                    <span>{directories.length}</span>
-                  </h2>
-                </div>
-                <div className="library-directory-grid">
-                  {directories.slice(0, visibleCount).map((folder) => {
-                    const { previews, childCount, categories } = folderPreview(
-                      folder.books,
-                      folder.path,
-                    );
-                    const isRootFolder =
-                      selectedFolder === "all" && !folder.path;
-                    return (
-                      <div
-                        key={`${folder.id}\0${folder.path}`}
-                        className="library-directory-card"
-                      >
-                        <button
-                          type="button"
-                          className="library-directory"
-                          aria-label={`Abrir colección ${folder.name}`}
-                          onClick={() => navigate(folder.id, folder.path)}
-                        >
-                          <div
-                            className="library-directory__preview"
-                            data-count={previews.length}
-                            aria-hidden="true"
-                          >
-                            {previews.length ? (
-                              previews.map((book) => (
-                                <LibraryCover
-                                  key={book.path}
-                                  book={book}
-                                  loader={service.loadCover}
-                                  revision={generation.current}
-                                />
-                              ))
-                            ) : (
-                              <StackIcon size={48} weight="thin" />
-                            )}
-                          </div>
-                          <span className="library-directory__name">
-                            <StackIcon size={17} aria-hidden="true" />
-                            <span>{folder.name}</span>
-                          </span>
-                          <span className="library-directory__categories">
-                            {categories
-                              .map((category) => CATEGORY_LABELS[category])
-                              .join(" · ") || "Colección"}
-                          </span>
-                          <span className="library-directory__count">
-                            <span>
-                              {childCount > 0 &&
-                                `${childCount} ${childCount === 1 ? "colección" : "colecciones"} · `}
-                              {folder.books.length}{" "}
-                              {folder.books.length === 1
-                                ? "archivo"
-                                : "archivos"}
-                            </span>
-                            <CaretRightIcon size={15} />
-                          </span>
-                        </button>
-                        {isRootFolder && (
                           <button
                             type="button"
                             className="library-icon library-directory-card__remove"
@@ -1042,79 +896,561 @@ export function LibraryScreen({
                               void perform(async () => {
                                 await service.removeFolder(folder.id);
                                 if (selectedFolder === folder.id) {
-                                  navigate("all");
+                                  setSelectedFolder("all");
+                                  setDirectory("");
                                 }
                               })
                             }
                           >
                             <TrashIcon size={15} />
                           </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="library-empty">
+                    <div className="library-empty__icon">
+                      <StackIcon size={44} weight="thin" />
+                    </div>
+                    <h2>Aún no has añadido colecciones</h2>
+                    <p>
+                      Selecciona una carpeta de tu dispositivo para organizar
+                      automáticamente tus libros, cómics, manga y documentos.
+                    </p>
+                    <button
+                      type="button"
+                      className="library-button library-button--primary"
+                      disabled={disabled}
+                      onClick={() => void perform(service.pickFolder)}
+                    >
+                      <StackPlusIcon size={20} />
+                      <span>Añadir mi primera colección</span>
+                    </button>
+                  </div>
+                )}
               </section>
-            )}
+            ) : (
+              <>
+                {(activeMenu === "search" ||
+                  Boolean(query.trim()) ||
+                  format !== "all") && (
+                  <div className="library-search-drawer">
+                    <label className="library-search">
+                      <MagnifyingGlassIcon size={20} />
+                      <input
+                        ref={searchInputRef}
+                        aria-label="Buscar en la biblioteca"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Buscar por título, autor o colección…"
+                        type="search"
+                      />
+                    </label>
 
-            {directBooks.length > 0 && (
-              <section
-                aria-label="Archivos de esta colección"
-                className="library-group"
-              >
-                <h2 className="library-group__title">
-                  {onlyFavorites
-                    ? "Mi lista de favoritos"
-                    : filter !== "all"
-                      ? CATEGORY_LABELS[filter]
-                      : "Archivos"}{" "}
-                  <span>{directBooks.length}</span>
-                </h2>
-                <div className="library-grid">
-                  {directBooks
-                    .slice(0, Math.max(0, visibleCount - directories.length))
-                    .map((book) => renderBookCard(book, "direct"))}
-                </div>
-              </section>
-            )}
+                    <select
+                      aria-label="Filtrar por colección"
+                      value={selectedFolder}
+                      onChange={(e) => {
+                        setSelectedFolder(e.target.value);
+                        setDirectory("");
+                      }}
+                    >
+                      <option value="all">Todas las colecciones</option>
+                      {folders.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name} ({f.books.length})
+                        </option>
+                      ))}
+                    </select>
 
-            {!itemCount && (
-              <div className="library-empty">
-                <div className="library-empty__icon">
-                  <BooksIcon size={44} weight="thin" />
-                </div>
-                <h2>
-                  {scanning
-                    ? "Buscando tus próximas lecturas"
-                    : folders.length
-                      ? "No hay archivos para mostrar"
-                      : "Tus historias empiezan aquí"}
-                </h2>
-                <p>
-                  {folders.length
-                    ? "Prueba otros filtros o actualiza tus colecciones. Se incluyen los archivos de las subcolecciones."
-                    : "Escoge una colección y reuniremos sus libros, cómics, manga y documentos en tu biblioteca."}
-                </p>
-                {!folders.length && (
-                  <button
-                    className="library-button library-button--primary"
-                    disabled={disabled}
-                    onClick={() => void perform(service.pickFolder)}
+                    <select
+                      aria-label="Filtrar por formato"
+                      value={format}
+                      onChange={(e) => setFormat(e.target.value)}
+                    >
+                      <option value="all">Todos los formatos</option>
+                      {format !== "all" && !formats.includes(format) && (
+                        <option value={format}>{format.toUpperCase()}</option>
+                      )}
+                      {formats.map((f) => (
+                        <option key={f} value={f}>
+                          {f.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+
+                    <span
+                      className="library-search-drawer__status"
+                      role="status"
+                    >
+                      {loading
+                        ? "Abriendo documento…"
+                        : scanning
+                          ? "Explorando colecciones…"
+                          : `${matchingCount} ${matchingCount === 1 ? "archivo" : "archivos"}`}
+                    </span>
+                  </div>
+                )}
+
+                {activeMenu === "library" && activeSpotlightBook && (
+                  <section
+                    className="library-spotlight"
+                    aria-label="Lectura destacada"
                   >
-                    <StackPlusIcon size={20} />
-                    Escoger mi primera colección
+                    <div className="library-spotlight__stage">
+                      {spotlightBooks.length > 1 && (
+                        <button
+                          type="button"
+                          className="library-spotlight__arrow library-spotlight__arrow--prev"
+                          onClick={() =>
+                            setSpotlightIndex(
+                              (current) =>
+                                (current - 1 + spotlightBooks.length) %
+                                spotlightBooks.length,
+                            )
+                          }
+                          aria-label="Destacado anterior"
+                        >
+                          <CaretLeftIcon size={24} weight="bold" />
+                        </button>
+                      )}
+
+                      <div
+                        className={`library-spotlight__banner library-spotlight__banner--${spotlightCategory}`}
+                        onClick={() => setSelectedBook(activeSpotlightBook)}
+                      >
+                        {resolvedSpotlightBackdropUrl && (
+                          <div
+                            key={`bg-${activeSpotlightBook.path}-${resolvedSpotlightBackdropUrl}`}
+                            className="library-spotlight__bg-clip"
+                            aria-hidden="true"
+                          >
+                            <div
+                              className="library-spotlight__bg"
+                              style={{
+                                backgroundImage: `url(${resolvedSpotlightBackdropUrl})`,
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div
+                          key={`content-${activeSpotlightBook.path}`}
+                          className="library-spotlight__content"
+                        >
+                          <div className="library-spotlight__badges">
+                            <span className="library-spotlight__pill library-spotlight__pill--accent">
+                              {spotlightProgress &&
+                              spotlightProgress.currentPage > 1
+                                ? "CONTINUAR LECTURA"
+                                : "DESTACADO EN TU BIBLIOTECA"}
+                            </span>
+                            <span className="library-spotlight__pill">
+                              {CATEGORY_LABELS[spotlightCategory].toUpperCase()}{" "}
+                              · {activeSpotlightBook.format.toUpperCase()}
+                            </span>
+                            {spotlightProgress &&
+                              spotlightProgress.currentPage > 1 && (
+                                <span className="library-spotlight__pill">
+                                  Pág. {spotlightProgress.currentPage}
+                                  {spotlightProgress.totalPages
+                                    ? ` / ${spotlightProgress.totalPages}`
+                                    : ""}
+                                </span>
+                              )}
+                          </div>
+
+                          <h1
+                            className="library-spotlight__title"
+                            title={spotlightTitle}
+                          >
+                            {spotlightTitle}
+                          </h1>
+                          <p className="library-spotlight__author">
+                            {spotlightAuthor}
+                          </p>
+                          <p className="library-spotlight__desc">
+                            {spotlightDesc}
+                          </p>
+
+                          <div
+                            className="library-spotlight__actions"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {canReadBook(activeSpotlightBook) && (
+                              <button
+                                type="button"
+                                className="library-spotlight__btn library-spotlight__btn--primary"
+                                disabled={disabled}
+                                onClick={() => onOpenBook(activeSpotlightBook)}
+                              >
+                                <BookOpenIcon size={18} weight="fill" />
+                                <span>
+                                  {spotlightProgress &&
+                                  spotlightProgress.currentPage > 1
+                                    ? "Continuar leyendo"
+                                    : "Comenzar lectura"}
+                                </span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="library-spotlight__btn library-spotlight__btn--secondary"
+                              disabled={disabled}
+                              onClick={() =>
+                                setSelectedBook(activeSpotlightBook)
+                              }
+                            >
+                              <span>Ver detalles</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div
+                          key={`visual-${activeSpotlightBook.path}`}
+                          className="library-spotlight__Visual"
+                        >
+                          <div className="library-spotlight__cover">
+                            <LibraryCover
+                              book={activeSpotlightBook}
+                              loader={service.loadCover}
+                              revision={generation.current}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {spotlightBooks.length > 1 && (
+                        <button
+                          type="button"
+                          className="library-spotlight__arrow library-spotlight__arrow--next"
+                          onClick={() =>
+                            setSpotlightIndex(
+                              (current) =>
+                                (current + 1) % spotlightBooks.length,
+                            )
+                          }
+                          aria-label="Siguiente destacado"
+                        >
+                          <CaretRightIcon size={24} weight="bold" />
+                        </button>
+                      )}
+                    </div>
+
+                    {spotlightBooks.length > 1 && (
+                      <div
+                        className="library-spotlight__dots"
+                        role="tablist"
+                        aria-label="Seleccionar libro destacado"
+                      >
+                        {spotlightBooks.map((item, idx) => (
+                          <button
+                            key={item.path}
+                            type="button"
+                            role="tab"
+                            aria-selected={idx === safeSpotlightIndex}
+                            aria-label={`Destacado ${idx + 1}: ${item.name}`}
+                            className={`library-spotlight__dot${idx === safeSpotlightIndex ? " is-active" : ""}`}
+                            onClick={() => setSpotlightIndex(idx)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {activeMenu === "library" && (
+                  <section
+                    className="library-hubs"
+                    aria-label="Categorías de lectura"
+                  >
+                    {HUB_ITEMS.map((hub) => {
+                      const active = !onlyFavorites && filter === hub.id;
+                      const count = categoryCounts[hub.id];
+                      return (
+                        <button
+                          key={hub.id}
+                          type="button"
+                          className={`library-hub${active ? " is-active" : ""}`}
+                          onClick={() => {
+                            if (hub.id === "all") {
+                              resetToHome();
+                            } else {
+                              setOnlyFavorites(false);
+                              setFilter(filter === hub.id ? "all" : hub.id);
+                            }
+                          }}
+                        >
+                          <span className="library-hub__title">{hub.title}</span>
+                          <span className="library-hub__meta">
+                            {hub.subtitle} · {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </section>
+                )}
+
+                {(selectedFolder !== "all" || directory) && (
+                  <nav
+                    className="library-breadcrumbs"
+                    aria-label="Ruta de colecciones"
+                  >
+                    <button
+                      className="library-icon"
+                      aria-label="Subir un nivel"
+                      onClick={() =>
+                        directory
+                          ? navigate(
+                              selectedFolder,
+                              breadcrumbs.slice(0, -1).join("/"),
+                            )
+                          : navigate("all")
+                      }
+                    >
+                      <ArrowLeftIcon size={18} />
+                    </button>
+                    <button
+                      aria-current={
+                        selectedFolder === "all" ? "page" : undefined
+                      }
+                      onClick={() => navigate("all")}
+                    >
+                      Biblioteca
+                    </button>
+                    {currentFolder && (
+                      <>
+                        <CaretRightIcon size={13} aria-hidden="true" />
+                        <button
+                          aria-current={!directory ? "page" : undefined}
+                          onClick={() => navigate(selectedFolder)}
+                        >
+                          {currentFolder.name}
+                        </button>
+                      </>
+                    )}
+                    {breadcrumbs.map((part, index) => (
+                      <span key={index}>
+                        <CaretRightIcon size={13} aria-hidden="true" />
+                        <button
+                          aria-current={
+                            index === breadcrumbs.length - 1
+                              ? "page"
+                              : undefined
+                          }
+                          onClick={() =>
+                            navigate(
+                              selectedFolder,
+                              breadcrumbs.slice(0, index + 1).join("/"),
+                            )
+                          }
+                        >
+                          {part}
+                        </button>
+                      </span>
+                    ))}
+                  </nav>
+                )}
+
+                {isHomeOverview && inProgressBooks.length > 0 && (
+                  <section
+                    aria-label="Continuar leyendo"
+                    className="library-group"
+                  >
+                    <h2 className="library-group__title">
+                      Continuar leyendo <span>{inProgressBooks.length}</span>
+                    </h2>
+                    <div className="library-shelf">
+                      {inProgressBooks
+                        .slice(0, 12)
+                        .map((book) => renderBookCard(book, "continue"))}
+                    </div>
+                  </section>
+                )}
+
+                {isHomeOverview && recommendedBooks.length > 0 && (
+                  <section
+                    aria-label="Recomendados para ti"
+                    className="library-group"
+                  >
+                    <h2 className="library-group__title">
+                      Recomendados para ti <span>{visible.length}</span>
+                    </h2>
+                    <div className="library-shelf">
+                      {recommendedBooks.map((book) =>
+                        renderBookCard(book, "recommended"),
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {activeMenu === "library" && directories.length > 0 && (
+                  <section aria-label="Colecciones" className="library-group">
+                    <div className="library-group__header">
+                      <h2 className="library-group__title">
+                        {selectedFolder === "all"
+                          ? "Tus colecciones"
+                          : "Subcolecciones"}{" "}
+                        <span>{directories.length}</span>
+                      </h2>
+                    </div>
+                    <div className="library-directory-grid">
+                      {directories.slice(0, visibleCount).map((folder) => {
+                        const { previews, childCount, categories } =
+                          folderPreview(folder.books, folder.path);
+                        const isRootFolder =
+                          selectedFolder === "all" && !folder.path;
+                        return (
+                          <div
+                            key={`${folder.id}\0${folder.path}`}
+                            className="library-directory-card"
+                          >
+                            <button
+                              type="button"
+                              className="library-directory"
+                              aria-label={`Abrir colección ${folder.name}`}
+                              onClick={() => navigate(folder.id, folder.path)}
+                            >
+                              <div
+                                className="library-directory__preview"
+                                data-count={previews.length}
+                                aria-hidden="true"
+                              >
+                                {previews.length ? (
+                                  previews.map((book) => (
+                                    <LibraryCover
+                                      key={book.path}
+                                      book={book}
+                                      loader={service.loadCover}
+                                      revision={generation.current}
+                                    />
+                                  ))
+                                ) : (
+                                  <StackIcon size={48} weight="thin" />
+                                )}
+                              </div>
+                              <span className="library-directory__name">
+                                <StackIcon size={17} aria-hidden="true" />
+                                <span>{folder.name}</span>
+                              </span>
+                              <span className="library-directory__categories">
+                                {categories
+                                  .map((category) => CATEGORY_LABELS[category])
+                                  .join(" · ") || "Colección"}
+                              </span>
+                              <span className="library-directory__count">
+                                <span>
+                                  {childCount > 0 &&
+                                    `${childCount} ${childCount === 1 ? "colección" : "colecciones"} · `}
+                                  {folder.books.length}{" "}
+                                  {folder.books.length === 1
+                                    ? "archivo"
+                                    : "archivos"}
+                                </span>
+                                <CaretRightIcon size={15} />
+                              </span>
+                            </button>
+                            {isRootFolder && (
+                              <button
+                                type="button"
+                                className="library-icon library-directory-card__remove"
+                                title="Quitar de la biblioteca (conserva los archivos)"
+                                aria-label={`Quitar colección ${folder.name}`}
+                                disabled={disabled}
+                                onClick={() =>
+                                  void perform(async () => {
+                                    await service.removeFolder(folder.id);
+                                    if (selectedFolder === folder.id) {
+                                      navigate("all");
+                                    }
+                                  })
+                                }
+                              >
+                                <TrashIcon size={15} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                {directBooks.length > 0 && (
+                  <section
+                    aria-label="Archivos de esta colección"
+                    className="library-group"
+                  >
+                    <h2 className="library-group__title">
+                      {activeMenu === "mylist" || onlyFavorites
+                        ? "Mi lista"
+                        : activeMenu === "search"
+                          ? "Resultados de búsqueda"
+                          : filter !== "all"
+                            ? CATEGORY_LABELS[filter]
+                            : "Archivos"}{" "}
+                      <span>{directBooks.length}</span>
+                    </h2>
+                    <div className="library-grid">
+                      {directBooks
+                        .slice(
+                          0,
+                          Math.max(
+                            0,
+                            visibleCount -
+                              (activeMenu === "library"
+                                ? directories.length
+                                : 0),
+                          ),
+                        )
+                        .map((book) => renderBookCard(book, "direct"))}
+                    </div>
+                  </section>
+                )}
+
+                {!itemCount && (
+                  <div className="library-empty">
+                    <div className="library-empty__icon">
+                      <BooksIcon size={44} weight="thin" />
+                    </div>
+                    <h2>
+                      {scanning
+                        ? "Buscando tus próximas lecturas"
+                        : activeMenu === "mylist"
+                          ? "Tu lista está vacía"
+                          : folders.length
+                            ? "No hay archivos para mostrar"
+                            : "Tus historias empiezan aquí"}
+                    </h2>
+                    <p>
+                      {activeMenu === "mylist"
+                        ? "Abre el detalle de cualquier libro, cómic o manga y pulsa el icono de guardado para añadirlo a «Mi lista»."
+                        : folders.length
+                          ? "Prueba otros filtros o actualiza tus colecciones. Se incluyen los archivos de las subcolecciones."
+                          : "Escoge una colección y reuniremos sus libros, cómics, manga y documentos en tu biblioteca."}
+                    </p>
+                    {!folders.length && (
+                      <button
+                        className="library-button library-button--primary"
+                        disabled={disabled}
+                        onClick={() => void perform(service.pickFolder)}
+                      >
+                        <StackPlusIcon size={20} />
+                        Escoger mi primera colección
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {itemCount > visibleCount && (
+                  <button
+                    className="library-button library-load-more"
+                    onClick={() => setVisibleCount((count) => count + 60)}
+                  >
+                    Mostrar más · {itemCount - visibleCount} restantes
                   </button>
                 )}
-              </div>
-            )}
-
-            {itemCount > visibleCount && (
-              <button
-                className="library-button library-load-more"
-                onClick={() => setVisibleCount((count) => count + 60)}
-              >
-                Mostrar más · {itemCount - visibleCount} restantes
-              </button>
+              </>
             )}
 
             <footer className="library-footer">
